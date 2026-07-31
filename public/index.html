@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Clear Water Spa Service</title>
+<link rel="icon" type="image/png" href="/img/logo.png" />
+<link rel="stylesheet" href="/styles.css" />
+<link rel="stylesheet" href="/portal.css" />
+</head>
+<body>
+  <!-- Admin login / first-time setup gate -->
+  <div class="portal-app" id="adminAuthView">
+    <header class="portal-header">
+      <img src="/img/logo.png" alt="Clear Water Spa Service" class="brand-logo" />
+      <span>Clear Water Spa Service — Office</span>
+    </header>
+    <main class="portal-main">
+      <section id="adminSetupView" class="portal-card hidden">
+        <h1>Set up your admin account</h1>
+        <p class="portal-sub" style="margin:0 0 6px;">This is the first time this dashboard has been opened — create the office login. You can add more admin accounts later from Settings.</p>
+        <div id="adminSetupError" class="portal-error hidden"></div>
+        <label>Your name<input type="text" id="adminSetupName" /></label>
+        <label>Username<input type="text" id="adminSetupUsername" autocomplete="username" /></label>
+        <label>Password (min. 8 characters)<input type="password" id="adminSetupPassword" autocomplete="new-password" /></label>
+        <button class="btn primary" id="adminSetupBtn">Create account & log in</button>
+      </section>
+
+      <section id="adminLoginView" class="portal-card hidden">
+        <h1>Office login</h1>
+        <div id="adminLoginError" class="portal-error hidden"></div>
+        <label>Username<input type="text" id="adminLoginUsername" autocomplete="username" /></label>
+        <label>Password<input type="password" id="adminLoginPassword" autocomplete="current-password" /></label>
+        <button class="btn primary" id="adminLoginBtn">Log in</button>
+      </section>
+    </main>
+  </div>
+
+  <div class="app hidden" id="appRoot">
+    <header class="topbar">
+      <div class="brand">
+        <img src="/img/logo.png" alt="Clear Water Spa Service" class="brand-logo" />
+        <span>Clear Water Spa Service</span>
+      </div>
+      <nav class="tabs" id="tabs">
+        <button class="tab-btn active" data-tab="dashboard">Today</button>
+        <button class="tab-btn" data-tab="calendar">Calendar</button>
+        <button class="tab-btn" data-tab="customers">Customers</button>
+        <button class="tab-btn" data-tab="owners">Owners</button>
+        <button class="tab-btn" data-tab="technicians">Technicians</button>
+        <button class="tab-btn" data-tab="invoices">Invoices</button>
+        <button class="tab-btn" data-tab="schedule">Daily Schedule</button>
+        <button class="tab-btn" data-tab="propertycal">Property Calendar</button>
+        <button class="tab-btn" data-tab="requests">Requests</button>
+        <button class="tab-btn" data-tab="settings">Settings</button>
+      </nav>
+      <button class="btn small" id="adminLogoutBtn" style="background:transparent; color:#cfeaf2; border-color:rgba(255,255,255,0.4);">Log out</button>
+    </header>
+
+    <main id="main">
+      <!-- Dashboard / Today -->
+      <section id="tab-dashboard" class="tab-panel active">
+        <div class="panel-header">
+          <h1>Today — <span id="todayDate"></span></h1>
+        </div>
+        <div id="todayList" class="card-list"></div>
+      </section>
+
+      <!-- Calendar -->
+      <section id="tab-calendar" class="tab-panel">
+        <div class="panel-header">
+          <h1>Calendar</h1>
+          <button class="btn primary" id="newApptBtn">+ New Appointment</button>
+        </div>
+        <div class="cal-nav">
+          <button class="btn" id="calPrevBtn">‹</button>
+          <h2 id="calMonthLabel"></h2>
+          <button class="btn" id="calNextBtn">›</button>
+          <button class="btn" id="calTodayBtn">Today</button>
+        </div>
+        <div class="cal-grid" id="calGrid"></div>
+      </section>
+
+      <!-- Customers -->
+      <section id="tab-customers" class="tab-panel">
+        <div class="panel-header">
+          <h1>Customers</h1>
+          <button class="btn primary" id="newCustomerBtn">+ New Customer</button>
+        </div>
+        <div class="filter-row">
+          <label>Type
+            <select id="customerTypeFilter">
+              <option value="">All</option>
+              <option value="vacation">Vacation rental</option>
+              <option value="residential">Residential</option>
+            </select>
+          </label>
+          <input type="text" id="customerSearch" placeholder="Search name or address…" />
+        </div>
+        <p class="portal-hint">Each customer is a property. Link a property to an Owner account below to give them portal access at <code id="ownerPortalLink"></code> — one owner account can have several properties linked to it.</p>
+        <table class="data-table" id="customerTable">
+          <thead><tr><th>Name</th><th>Type</th><th>Phone</th><th>Email</th><th>Address</th><th>Equipment</th><th>Notes</th><th>Owner</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </section>
+
+      <!-- Owners (portal login accounts, can have multiple properties) -->
+      <section id="tab-owners" class="tab-panel">
+        <div class="panel-header">
+          <h1>Owners</h1>
+          <button class="btn primary" id="newOwnerBtn">+ New Owner</button>
+        </div>
+        <p class="portal-hint">Owner accounts log into <code id="ownerPortalLink2"></code>. Link properties to an owner from the Customers tab — one owner can have several properties.</p>
+        <table class="data-table" id="ownerTable">
+          <thead><tr><th>Name</th><th>Phone</th><th>Email</th><th>Username</th><th>Properties</th><th>Login set up?</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </section>
+
+      <!-- Technicians -->
+      <section id="tab-technicians" class="tab-panel">
+        <div class="panel-header">
+          <h1>Technicians</h1>
+          <button class="btn primary" id="newTechBtn">+ New Technician</button>
+        </div>
+        <p class="portal-hint">Technicians log into their own job list at <code id="techPortalLink"></code> using the username/password you set below.</p>
+        <table class="data-table" id="techTable">
+          <thead><tr><th>Name</th><th>Phone</th><th>Email</th><th>Username</th><th>Login set up?</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </section>
+
+      <!-- Invoices -->
+      <section id="tab-invoices" class="tab-panel">
+        <div class="panel-header">
+          <h1>Invoices</h1>
+          <button class="btn primary" id="newInvoiceBtn">+ New Invoice</button>
+        </div>
+        <div class="stat-cards" id="invoiceStats"></div>
+        <div class="filter-row">
+          <label>Status
+            <select id="invoiceStatusFilter">
+              <option value="">All</option>
+              <option value="draft">Draft</option>
+              <option value="sent">Sent (not overdue)</option>
+              <option value="overdue">Overdue</option>
+              <option value="paid">Paid</option>
+            </select>
+          </label>
+        </div>
+        <table class="data-table" id="invoiceTable">
+          <thead><tr><th>Customer</th><th>Amount</th><th>Issued</th><th>Due</th><th>Status</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </section>
+
+      <!-- Daily Schedule -->
+      <section id="tab-schedule" class="tab-panel">
+        <div class="panel-header">
+          <h1>Daily Schedule</h1>
+        </div>
+        <div class="filter-row">
+          <label>Date <input type="date" id="schedDate" /></label>
+        </div>
+        <div id="schedByTech" class="card-list"></div>
+      </section>
+
+      <!-- Property Calendar (vacation owners' guest booking dates) -->
+      <section id="tab-propertycal" class="tab-panel">
+        <div class="panel-header">
+          <h1>Property Calendar</h1>
+          <button class="btn primary" id="syncAllBtn">Sync all calendars now</button>
+        </div>
+        <p class="portal-hint">Guest booking dates, entered manually or auto-synced from owners' Airbnb/VRBO calendars.</p>
+        <div id="syncAllStatus" class="portal-hint"></div>
+        <div class="filter-row">
+          <label>Property
+            <select id="bookingCustomerFilter"><option value="">All properties</option></select>
+          </label>
+        </div>
+        <table class="data-table" id="bookingsTable">
+          <thead><tr><th>Property</th><th>Check-in</th><th>Check-out</th><th>Notes</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </section>
+
+      <!-- Service Requests (from owner portal) -->
+      <section id="tab-requests" class="tab-panel">
+        <div class="panel-header">
+          <h1>Service Requests</h1>
+        </div>
+        <p class="portal-hint">Requests submitted by owners through their portal. Schedule turns it into a real appointment.</p>
+        <div class="filter-row">
+          <label>Status
+            <select id="requestStatusFilter">
+              <option value="pending">Pending</option>
+              <option value="scheduled">Scheduled</option>
+              <option value="declined">Declined</option>
+              <option value="">All</option>
+            </select>
+          </label>
+        </div>
+        <table class="data-table" id="requestsTable">
+          <thead><tr><th>Property</th><th>Requested date</th><th>Notes</th><th>Status</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </section>
+
+      <!-- Settings (route optimization depot + geocoding) -->
+      <section id="tab-settings" class="tab-panel">
+        <div class="panel-header">
+          <h1>Settings</h1>
+        </div>
+
+        <div class="portal-card" style="max-width:520px; margin:0 0 24px;">
+          <div style="font-size:14px; font-weight:600;">Shop / depot address</div>
+          <p class="portal-sub" style="margin:0;">Daily schedules and weekly emails order each technician's stops into an efficient route starting from here.</p>
+          <label>Address<input type="text" id="depotAddressInput" /></label>
+          <div id="depotStatus" class="portal-sub" style="margin:0;"></div>
+          <div style="display:flex; gap:8px;">
+            <button class="btn primary" id="saveDepotBtn">Save & locate</button>
+          </div>
+        </div>
+
+        <div class="portal-card" style="max-width:520px; margin:0;">
+          <div style="font-size:14px; font-weight:600;">Property locations</div>
+          <p class="portal-sub" style="margin:0;">Route ordering needs each property's address mapped to a location. Run this once, and again any time you add several new properties at once (editing a single property's address geocodes it automatically).</p>
+          <div id="geocodeStatus" class="portal-sub" style="margin:0;"></div>
+          <div style="display:flex; gap:8px;">
+            <button class="btn primary" id="geocodeAllBtn">Geocode all addresses</button>
+          </div>
+        </div>
+
+        <div class="portal-card" style="max-width:520px; margin:24px 0 0;">
+          <div style="font-size:14px; font-weight:600;">Admin accounts</div>
+          <p class="portal-sub" style="margin:0;">Anyone with one of these logins can see and edit everything in this dashboard.</p>
+          <div id="adminAccountsList" style="display:flex; flex-direction:column; gap:6px;"></div>
+          <div id="adminAccountsError" class="portal-error hidden"></div>
+          <div style="border-top:1px solid #eef1f2; padding-top:12px; display:flex; flex-direction:column; gap:12px;">
+            <label>Name<input type="text" id="newAdminName" /></label>
+            <label>Username<input type="text" id="newAdminUsername" autocomplete="off" /></label>
+            <label>Password (min. 8 characters)<input type="password" id="newAdminPassword" autocomplete="new-password" /></label>
+            <button class="btn" id="addAdminBtn" style="align-self:flex-start;">+ Add admin account</button>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Modal -->
+  <div id="modalOverlay" class="modal-overlay hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <h2 id="modalTitle">Title</h2>
+        <button class="btn-close" id="modalClose">&times;</button>
+      </div>
+      <div class="modal-body" id="modalBody"></div>
+    </div>
+  </div>
+
+  <!-- Text preview modal -->
+  <div id="textModalOverlay" class="modal-overlay hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <h2 id="textModalTitle">Message</h2>
+        <button class="btn-close" id="textModalClose">&times;</button>
+      </div>
+      <div class="modal-body">
+        <textarea id="textModalContent" rows="10" readonly></textarea>
+        <button class="btn primary" id="copyTextBtn">Copy to clipboard</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>

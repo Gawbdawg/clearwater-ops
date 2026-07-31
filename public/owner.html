@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Clear Water Spa Service — Customer Portal</title>
+<link rel="icon" type="image/png" href="/img/logo.png" />
+<link rel="stylesheet" href="/styles.css" />
+<link rel="stylesheet" href="/portal.css" />
+</head>
+<body>
+  <div class="portal-app">
+    <header class="portal-header">
+      <img src="/img/logo.png" alt="Clear Water Spa Service" class="brand-logo" />
+      <span>Customer Portal</span>
+      <button class="btn small" id="logoutBtn" style="margin-left:auto; display:none;">Log out</button>
+    </header>
+
+    <main class="portal-main">
+      <!-- Login -->
+      <section id="loginView" class="portal-card">
+        <h1>Customer login</h1>
+        <div id="loginError" class="portal-error hidden"></div>
+        <label>Username<input type="text" id="loginUsername" autocomplete="username" /></label>
+        <label>Password<input type="password" id="loginPassword" autocomplete="current-password" /></label>
+        <button class="btn primary" id="loginBtn">Log in</button>
+      </section>
+
+      <!-- Dashboard -->
+      <section id="dashView" class="hidden">
+        <h1 id="welcomeMsg"></h1>
+        <p class="portal-sub" id="introText">Request a hot tub service date any time.</p>
+
+        <div id="propertySwitcherRow" class="filter-row hidden">
+          <label>Property
+            <select id="propertySelect"></select>
+          </label>
+        </div>
+
+        <div id="bookingSection">
+          <h2>Guest booking dates <span id="bookingSectionPropertyName" style="font-weight:400; color:#5a7078;"></span></h2>
+          <p class="portal-sub">Mark date ranges when this property is occupied so we schedule around your guests — either automatically from your Airbnb/VRBO calendar, or by adding dates yourself below.</p>
+
+          <div class="portal-card" style="max-width:none; margin: 0 0 20px;">
+            <div style="font-size:14px; font-weight:600;">Auto-sync from Airbnb, VRBO, or another platform</div>
+            <p class="portal-sub" style="margin:0;">Paste this property's iCal export link (in Airbnb: Listing → Availability → Sync calendars → Export calendar). We'll pull in your booked dates automatically.</p>
+            <label>Calendar link (iCal URL)<input type="text" id="icalUrlInput" placeholder="https://www.airbnb.com/calendar/ical/....ics" /></label>
+            <div id="icalSyncStatus" class="portal-sub" style="margin:0;"></div>
+            <div style="display:flex; gap:8px;">
+              <button class="btn primary" id="saveIcalBtn">Save & sync now</button>
+            </div>
+          </div>
+
+          <div class="calendar-form-row">
+            <label>Check-in <input type="date" id="bookingStart" /></label>
+            <label>Check-out <input type="date" id="bookingEnd" /></label>
+            <label style="flex:1; min-width:160px;">Notes <input type="text" id="bookingNotes" placeholder="optional" /></label>
+            <button class="btn primary" id="addBookingBtn">Add manually</button>
+          </div>
+          <div id="bookingsList"></div>
+        </div>
+
+        <h2 style="margin-top:28px;">Request a service date</h2>
+        <p class="portal-sub">Ask for a specific date — an extra clean, a repair, anything — and we'll confirm or reach out to reschedule.</p>
+        <div class="calendar-form-row">
+          <label id="requestPropertyRow" class="hidden">Property <select id="requestPropertySelect"></select></label>
+          <label>Requested date <input type="date" id="requestDate" /></label>
+          <label style="flex:1; min-width:160px;">Notes <input type="text" id="requestNotes" placeholder="e.g. extra clean, repair" /></label>
+          <button class="btn primary" id="addRequestBtn">Request</button>
+        </div>
+        <div id="requestsList"></div>
+      </section>
+    </main>
+  </div>
+  <script src="/owner.js"></script>
+</body>
+</html>

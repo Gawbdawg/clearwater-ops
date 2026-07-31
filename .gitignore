@@ -1,0 +1,7 @@
+node_modules/
+data/data.json
+data/uploads/
+!data/.gitkeep
+!data/seed-customers.json
+*.log
+.DS_Store
