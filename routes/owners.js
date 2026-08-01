@@ -148,8 +148,12 @@ router.post('/bulk-create-from-customers', (req, res) => {
 // Bulk-links owners to customers/properties from pasted text — one line per pairing in
 // the form "CustomerName: OwnerName, Phone". The customer/property side is matched the
 // same conservative way as the other bulk-paste tools (bulk appointment import, bulk
-// contact-info update) — anything ambiguous is skipped and reported back rather than
-// guessed at. The owner side is matched by exact name (case-insensitive) so the same
+// contact-info update) — anything ambiguous (more than one possible match) is skipped
+// and reported back rather than guessed at. If a name doesn't match any existing
+// customer at all, a new one is created (type "vacation," since that's what having an
+// owner account is normally for) rather than just reporting a miss — this is the same
+// tool that would otherwise force a separate manual "Add customer" step for every new
+// property. The owner side is matched by exact name (case-insensitive) so the same
 // owner mentioned on multiple lines (e.g. one person who owns two properties) only gets
 // created once and both properties get linked to it. Never overwrites a customer that's
 // already linked to a DIFFERENT owner — that's reported back as a conflict instead of
@@ -158,15 +162,15 @@ router.post('/bulk-link-from-text', (req, res) => {
   const { text } = req.body;
   if (!text || !text.trim()) return res.status(400).json({ error: 'No text provided' });
 
-  const customers = store.getAll('customers');
-  const findCustomer = makeCustomerMatcher(customers);
+  let customers = store.getAll('customers');
+  let findCustomer = makeCustomerMatcher(customers);
   let owners = store.getAll('owners');
   const findOwnerByName = (name) => owners.find((o) => (o.name || '').trim().toLowerCase() === name.trim().toLowerCase());
 
   const linked = [];
+  const created = [];
   const alreadyLinked = [];
   const conflicts = [];
-  const unmatchedCustomers = [];
   const skippedLines = [];
   let ownersCreated = 0;
 
@@ -182,8 +186,14 @@ router.post('/bulk-link-from-text', (req, res) => {
     const phone = (commaIdx === -1 ? '' : rest.slice(commaIdx + 1).trim());
     if (!customerName || !ownerName) { skippedLines.push(line); return; }
 
-    const customer = findCustomer(customerName);
-    if (!customer) { unmatchedCustomers.push(customerName); return; }
+    let customer = findCustomer(customerName);
+    let isNewCustomer = false;
+    if (!customer) {
+      customer = store.create('customers', { name: customerName, type: 'vacation', ownerId: null });
+      customers = [...customers, customer];
+      findCustomer = makeCustomerMatcher(customers); // keep the matcher in sync so later lines can't create a duplicate
+      isNewCustomer = true;
+    }
 
     if (customer.ownerId) {
       const existingOwner = store.getById('owners', customer.ownerId);
@@ -214,16 +224,21 @@ router.post('/bulk-link-from-text', (req, res) => {
     }
 
     store.update('customers', customer.id, { ownerId: owner.id });
-    linked.push(`${customer.name} -> ${owner.name}`);
+    if (isNewCustomer) {
+      created.push(`${customer.name} (new property) -> ${owner.name}`);
+    } else {
+      linked.push(`${customer.name} -> ${owner.name}`);
+    }
   });
 
   res.json({
     linked,
-    linkedCount: linked.length,
+    created,
+    linkedCount: linked.length + created.length,
+    customersCreated: created.length,
     ownersCreated,
     alreadyLinked,
     conflicts,
-    unmatchedCustomers,
     skippedLines,
   });
 });
