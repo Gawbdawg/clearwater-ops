@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Clear Water Spa Service — Technician</title>
+<link rel="icon" type="image/png" href="/img/logo.png" />
+<link rel="stylesheet" href="/styles.css" />
+<link rel="stylesheet" href="/portal.css" />
+</head>
+<body>
+  <div class="portal-app">
+    <header class="portal-header">
+      <img src="/img/logo.png" alt="Clear Water Spa Service" class="brand-logo" />
+      <span>My Jobs</span>
+      <button class="btn small" id="logoutBtn" style="margin-left:auto; display:none;">Log out</button>
+    </header>
+
+    <main class="portal-main">
+      <!-- Login -->
+      <section id="loginView" class="portal-card">
+        <h1>Technician login</h1>
+        <div id="loginError" class="portal-error hidden"></div>
+        <label>Username<input type="text" id="loginUsername" autocomplete="username" /></label>
+        <label>Password<input type="password" id="loginPassword" autocomplete="current-password" /></label>
+        <button class="btn primary" id="loginBtn">Log in</button>
+      </section>
+
+      <!-- Jobs -->
+      <section id="jobsView" class="hidden">
+        <h1 id="welcomeMsg"></h1>
+        <p class="portal-sub">Your upcoming jobs. Mark one complete once you're done — you can undo that if you tap it by mistake.</p>
+        <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:12px;">
+          <input type="date" id="jobsDatePicker" />
+          <button class="btn small" id="jobsDateGoBtn">View that day</button>
+          <button class="btn small" id="jobsBackToUpcomingBtn" style="display:none;">Back to upcoming jobs</button>
+        </div>
+        <div id="jobsList" class="card-list"></div>
+      </section>
+    </main>
+  </div>
+  <input type="file" id="photoFileInput" accept="image/*" capture="environment" style="display:none" />
+  <script src="/tech.js"></script>
+</body>
+</html>

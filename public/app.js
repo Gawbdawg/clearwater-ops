@@ -1,0 +1,1822 @@
+const state = { customers: [], owners: [], technicians: [], appointments: [], invoices: [], services: [] };
+
+function todayStr() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+async function api(path, opts = {}) {
+  const res = await fetch(path, {
+    headers: { 'Content-Type': 'application/json' },
+    ...opts,
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: 'Request failed' }));
+    throw new Error(err.error || 'Request failed');
+  }
+  if (res.status === 204) return null;
+  return res.json();
+}
+
+// ---------- Tabs ----------
+document.getElementById('tabs').addEventListener('click', (e) => {
+  const btn = e.target.closest('.tab-btn');
+  if (!btn) return;
+  document.querySelectorAll('.tab-btn').forEach((b) => b.classList.remove('active'));
+  document.querySelectorAll('.tab-panel').forEach((p) => p.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+  loadTab(btn.dataset.tab);
+});
+
+function loadTab(tab) {
+  if (tab === 'dashboard') loadDashboard();
+  if (tab === 'calendar') loadAppointments();
+  if (tab === 'customers') loadCustomers();
+  if (tab === 'owners') loadOwners();
+  if (tab === 'technicians') loadTechnicians();
+  if (tab === 'invoices') loadInvoices();
+  if (tab === 'schedule') loadSchedule();
+  if (tab === 'propertycal') loadBookings();
+  if (tab === 'requests') loadRequests();
+  if (tab === 'reports') loadReports();
+  if (tab === 'settings') loadSettingsTab();
+}
+
+// Portal links shown as hints on the Technicians/Customers/Owners tabs
+document.getElementById('techPortalLink').textContent = window.location.origin + '/tech';
+document.getElementById('ownerPortalLink').textContent = window.location.origin + '/owner';
+document.getElementById('ownerPortalLink2').textContent = window.location.origin + '/owner';
+
+// ---------- Modal ----------
+const modalOverlay = document.getElementById('modalOverlay');
+const modalBox = document.getElementById('modalBox');
+const modalTitle = document.getElementById('modalTitle');
+const modalBody = document.getElementById('modalBody');
+function openModal(title, bodyHtml, wide = false) {
+  modalTitle.textContent = title;
+  modalBody.innerHTML = bodyHtml;
+  modalBox.classList.toggle('wide', wide);
+  modalOverlay.classList.remove('hidden');
+}
+function closeModal() { modalOverlay.classList.add('hidden'); modalBox.classList.remove('wide'); }
+document.getElementById('modalClose').addEventListener('click', closeModal);
+modalOverlay.addEventListener('click', (e) => { if (e.target === modalOverlay) closeModal(); });
+
+const textModalOverlay = document.getElementById('textModalOverlay');
+const textModalTitle = document.getElementById('textModalTitle');
+const textModalContent = document.getElementById('textModalContent');
+function openTextModal(title, text) {
+  textModalTitle.textContent = title;
+  textModalContent.value = text;
+  textModalOverlay.classList.remove('hidden');
+}
+document.getElementById('textModalClose').addEventListener('click', () => textModalOverlay.classList.add('hidden'));
+textModalOverlay.addEventListener('click', (e) => { if (e.target === textModalOverlay) textModalOverlay.classList.add('hidden'); });
+document.getElementById('copyTextBtn').addEventListener('click', () => {
+  textModalContent.select();
+  document.execCommand('copy');
+});
+
+// ---------- Dashboard ----------
+async function loadDashboard() {
+  document.getElementById('todayDate').textContent = todayStr();
+  const [appts] = await Promise.all([api('/api/appointments?date=' + todayStr())]);
+  const list = document.getElementById('todayList');
+  if (appts.length === 0) {
+    list.innerHTML = '<div class="empty-state">No appointments scheduled for today.</div>';
+    return;
+  }
+  list.innerHTML = appts.map((a) => `
+    <div class="appt-card">
+      <div>
+        <strong>${a.startTime}${a.endTime ? '–' + a.endTime : ''} — ${a.customerName}</strong>
+        <div class="meta">${a.serviceType} · Tech: ${a.technicianName} ${a.customerAddress ? '· ' + a.customerAddress : ''}</div>
+      </div>
+      <span class="badge ${a.status}">${a.status}</span>
+    </div>
+  `).join('');
+}
+
+// ---------- Customers ----------
+function typeLabel(t) {
+  return t === 'vacation' ? 'Vacation rental' : 'Residential';
+}
+
+// Days until a filter is "due" based on its interval — negative means overdue.
+function filterDaysRemaining(equipment) {
+  if (!equipment || !equipment.filterLastChanged || !equipment.filterIntervalDays) return null;
+  const changed = new Date(equipment.filterLastChanged + 'T00:00:00');
+  const due = new Date(changed.getTime() + Number(equipment.filterIntervalDays) * 24 * 60 * 60 * 1000);
+  return Math.ceil((due - new Date()) / (24 * 60 * 60 * 1000));
+}
+
+function filterBadge(c) {
+  const eq = c.equipment;
+  if (!eq || (!eq.brand && !eq.model && !eq.filterType)) return '<span style="color:#9aa9ae;">—</span>';
+  const label = [eq.brand, eq.model].filter(Boolean).join(' ') || eq.filterType || 'On file';
+  const days = filterDaysRemaining(eq);
+  if (days === null) return label;
+  if (days < 0) return `${label} <span class="badge cancelled" title="Filter change overdue">Filter overdue</span>`;
+  if (days <= 14) return `${label} <span class="badge scheduled" title="Filter due soon">Filter due soon</span>`;
+  return label;
+}
+
+function renderCustomerTable() {
+  const typeFilter = document.getElementById('customerTypeFilter').value;
+  const search = document.getElementById('customerSearch').value.toLowerCase().trim();
+  let rows = state.customers;
+  if (typeFilter) rows = rows.filter((c) => (c.type || 'residential') === typeFilter);
+  if (search) {
+    rows = rows.filter((c) =>
+      (c.name || '').toLowerCase().includes(search) || (c.address || '').toLowerCase().includes(search)
+    );
+  }
+  rows = [...rows].sort((a, b) => a.name.localeCompare(b.name));
+  const tbody = document.querySelector('#customerTable tbody');
+  tbody.innerHTML = rows.map((c) => `
+    <tr>
+      <td>${c.name}</td>
+      <td><span class="badge ${c.type === 'vacation' ? 'sent' : 'completed'}">${typeLabel(c.type)}</span></td>
+      <td>${c.phone || ''}</td>
+      <td>${c.email || ''}</td>
+      <td>${c.address || ''}</td>
+      <td>${filterBadge(c)}</td>
+      <td>${c.notes || ''}</td>
+      <td>${c.ownerName || '—'}</td>
+      <td>
+        <button class="btn small" onclick="viewCustomerProfile(${c.id})">View</button>
+        ${c.ownerId ? `<button class="btn small" onclick="viewOwnerPortal(${c.ownerId})">View portal</button>` : ''}
+        <button class="btn small" onclick="editCustomer(${c.id})">Edit</button>
+        <button class="btn small danger" onclick="deleteCustomer(${c.id})">Delete</button>
+      </td>
+    </tr>
+  `).join('') || '<tr><td colspan="9" class="empty-state">No customers found.</td></tr>';
+}
+
+window.viewOwnerPortal = async (ownerId) => {
+  await api('/api/owner-auth/admin-view/' + ownerId, { method: 'POST' });
+  window.open('/owner', '_blank');
+};
+
+async function loadCustomers() {
+  const [customers, owners] = await Promise.all([api('/api/customers'), api('/api/owners')]);
+  state.customers = customers;
+  state.owners = owners;
+  renderCustomerTable();
+}
+
+document.getElementById('customerTypeFilter').addEventListener('change', renderCustomerTable);
+document.getElementById('customerSearch').addEventListener('input', renderCustomerTable);
+
+function ownerSelectOptions(selectedId) {
+  const options = state.owners.map((o) =>
+    `<option value="${o.id}" ${o.id === selectedId ? 'selected' : ''}>${o.name}${o.username ? ' (' + o.username + ')' : ''}</option>`
+  ).join('');
+  return `<option value="">No owner account</option>${options}<option value="__new__">+ Create new owner account…</option>`;
+}
+
+function customerForm(c = {}) {
+  const eq = c.equipment || {};
+  return `
+    <label>Name<input id="f_name" value="${c.name || ''}" /></label>
+    <label>Type
+      <select id="f_type">
+        <option value="residential" ${(c.type || 'residential') === 'residential' ? 'selected' : ''}>Residential</option>
+        <option value="vacation" ${c.type === 'vacation' ? 'selected' : ''}>Vacation rental</option>
+      </select>
+    </label>
+    <label>Phone<input id="f_phone" value="${c.phone || ''}" /></label>
+    <label>Email<input id="f_email" value="${c.email || ''}" /></label>
+    <label>Address<input id="f_address" value="${c.address || ''}" /></label>
+    <label>Service frequency
+      <select id="f_serviceFrequency" onchange="onServiceFrequencyChange()">
+        <option value="" ${!c.serviceFrequency ? 'selected' : ''}>Not set</option>
+        <option value="weekly" ${c.serviceFrequency === 'weekly' ? 'selected' : ''}>Weekly</option>
+        <option value="biweekly" ${c.serviceFrequency === 'biweekly' ? 'selected' : ''}>Every 2 weeks</option>
+        <option value="every4weeks" ${c.serviceFrequency === 'every4weeks' ? 'selected' : ''}>Every 4 weeks</option>
+        <option value="custom" ${c.serviceFrequency === 'custom' ? 'selected' : ''}>Custom</option>
+      </select>
+    </label>
+    <label id="f_customFreqWrap" style="${c.serviceFrequency === 'custom' ? '' : 'display:none;'}">Custom — every N days
+      <input type="number" min="1" id="f_customFrequencyDays" value="${c.customFrequencyDays || ''}" placeholder="e.g. 21" />
+    </label>
+    <label>Notes<textarea id="f_notes" rows="3">${c.notes || ''}</textarea></label>
+
+    <div style="display:flex; flex-direction: column; gap: 12px; border-top: 1px solid #eef1f2; padding-top: 12px;">
+      <div style="font-size:13px; font-weight:600; color:#33505c;">Hot tub equipment (optional)</div>
+      <div style="display:flex; gap:10px;">
+        <label style="flex:1;">Brand<input id="f_eqBrand" value="${eq.brand || ''}" placeholder="e.g. Jacuzzi" /></label>
+        <label style="flex:1;">Model<input id="f_eqModel" value="${eq.model || ''}" /></label>
+      </div>
+      <div style="display:flex; gap:10px;">
+        <label style="flex:1;">Serial number<input id="f_eqSerial" value="${eq.serialNumber || ''}" /></label>
+        <label style="flex:1;">Capacity (gallons)<input id="f_eqCapacity" value="${eq.capacityGallons || ''}" /></label>
+      </div>
+      <label>Install date<input type="date" id="f_eqInstallDate" value="${eq.installDate || ''}" /></label>
+      <div style="display:flex; gap:10px;">
+        <label style="flex:1;">Filter type/size<input id="f_eqFilterType" value="${eq.filterType || ''}" placeholder="e.g. Pleatco PWW50" /></label>
+        <label style="flex:1;">Filter last changed<input type="date" id="f_eqFilterChanged" value="${eq.filterLastChanged || ''}" /></label>
+      </div>
+      <label>Filter change reminder
+        <select id="f_eqFilterInterval">
+          <option value="">No reminder</option>
+          <option value="30" ${String(eq.filterIntervalDays) === '30' ? 'selected' : ''}>Every month</option>
+          <option value="90" ${String(eq.filterIntervalDays) === '90' ? 'selected' : ''}>Every 3 months</option>
+          <option value="180" ${String(eq.filterIntervalDays) === '180' ? 'selected' : ''}>Every 6 months</option>
+          <option value="365" ${String(eq.filterIntervalDays) === '365' ? 'selected' : ''}>Every year</option>
+        </select>
+      </label>
+      <label>Equipment notes<textarea id="f_eqNotes" rows="2">${eq.notes || ''}</textarea></label>
+    </div>
+
+    <div style="display:flex; flex-direction: column; gap: 12px; border-top: 1px solid #eef1f2; padding-top: 12px;">
+      <div style="font-size:13px; font-weight:600; color:#33505c;">Property owner (portal access)</div>
+      <label>Owner account
+        <select id="f_ownerSelect">${ownerSelectOptions(c.ownerId)}</select>
+      </label>
+      <div id="newOwnerFields" class="hidden" style="display:none; flex-direction: column; gap: 12px;">
+        <label>Owner name<input id="f_newOwnerName" /></label>
+        <label>Email<input id="f_newOwnerEmail" /></label>
+        <label>Phone<input id="f_newOwnerPhone" /></label>
+        <label>Username<input id="f_newOwnerUsername" autocomplete="off" /></label>
+        <label>Password<input type="password" id="f_newOwnerPassword" autocomplete="new-password" /></label>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal()">Cancel</button>
+      <button class="btn primary" id="saveCustomerBtn">Save</button>
+    </div>
+  `;
+}
+
+window.onServiceFrequencyChange = () => {
+  const wrap = document.getElementById('f_customFreqWrap');
+  wrap.style.display = document.getElementById('f_serviceFrequency').value === 'custom' ? '' : 'none';
+};
+
+function wireOwnerSelectToggle() {
+  const select = document.getElementById('f_ownerSelect');
+  const newFields = document.getElementById('newOwnerFields');
+  const sync = () => { newFields.style.display = select.value === '__new__' ? 'flex' : 'none'; };
+  select.addEventListener('change', sync);
+  sync();
+}
+
+document.getElementById('newCustomerBtn').addEventListener('click', () => {
+  openModal('New Customer', customerForm());
+  wireOwnerSelectToggle();
+  document.getElementById('saveCustomerBtn').addEventListener('click', async () => {
+    try {
+      await api('/api/customers', { method: 'POST', body: JSON.stringify(readCustomerForm()) });
+      closeModal(); loadCustomers();
+    } catch (e) {
+      alert('Could not save customer: ' + e.message);
+    }
+  });
+});
+
+function readCustomerForm() {
+  const data = {
+    name: document.getElementById('f_name').value,
+    type: document.getElementById('f_type').value,
+    phone: document.getElementById('f_phone').value,
+    email: document.getElementById('f_email').value,
+    address: document.getElementById('f_address').value,
+    serviceFrequency: document.getElementById('f_serviceFrequency').value || null,
+    customFrequencyDays: document.getElementById('f_serviceFrequency').value === 'custom'
+      ? (document.getElementById('f_customFrequencyDays').value || null) : null,
+    notes: document.getElementById('f_notes').value,
+    equipment: {
+      brand: document.getElementById('f_eqBrand').value,
+      model: document.getElementById('f_eqModel').value,
+      serialNumber: document.getElementById('f_eqSerial').value,
+      capacityGallons: document.getElementById('f_eqCapacity').value,
+      installDate: document.getElementById('f_eqInstallDate').value,
+      filterType: document.getElementById('f_eqFilterType').value,
+      filterLastChanged: document.getElementById('f_eqFilterChanged').value,
+      filterIntervalDays: document.getElementById('f_eqFilterInterval').value || null,
+      notes: document.getElementById('f_eqNotes').value,
+    },
+  };
+  const ownerSelectVal = document.getElementById('f_ownerSelect').value;
+  if (ownerSelectVal === '__new__') {
+    data.newOwner = {
+      name: document.getElementById('f_newOwnerName').value,
+      email: document.getElementById('f_newOwnerEmail').value,
+      phone: document.getElementById('f_newOwnerPhone').value,
+      username: document.getElementById('f_newOwnerUsername').value,
+      password: document.getElementById('f_newOwnerPassword').value,
+    };
+  } else {
+    data.ownerId = ownerSelectVal || null;
+  }
+  return data;
+}
+
+window.editCustomer = (id) => {
+  const c = state.customers.find((x) => x.id === id);
+  openModal('Edit Customer', customerForm(c));
+  wireOwnerSelectToggle();
+  document.getElementById('saveCustomerBtn').addEventListener('click', async () => {
+    try {
+      await api('/api/customers/' + id, { method: 'PUT', body: JSON.stringify(readCustomerForm()) });
+      closeModal(); loadCustomers();
+    } catch (e) {
+      alert('Could not save customer: ' + e.message);
+    }
+  });
+};
+
+window.deleteCustomer = async (id) => {
+  if (!confirm('Delete this customer? This does not delete their appointments/invoices.')) return;
+  try {
+    await api('/api/customers/' + id, { method: 'DELETE' });
+    loadCustomers();
+  } catch (e) {
+    alert('Could not delete customer: ' + e.message);
+  }
+};
+
+window.viewCustomerProfile = async (id) => {
+  let c;
+  try {
+    c = await api('/api/customers/' + id);
+  } catch (e) {
+    alert('Could not load this customer: ' + e.message);
+    return;
+  }
+  const eq = c.equipment || {};
+  const hasEquipment = eq.brand || eq.model || eq.filterType;
+
+  const apptRows = (c.appointments || []).map((a) => {
+    const chem = [a.chlorine && `Cl ${a.chlorine}`, a.ph && `pH ${a.ph}`, a.alkalinity && `Alk ${a.alkalinity}`].filter(Boolean).join(' · ');
+    const photoCount = (a.photos || []).length;
+    return `
+      <div class="profile-history-item">
+        <div style="display:flex; justify-content:space-between; gap:8px;">
+          <strong>${niceDateShort(a.date)} · ${a.startTime}</strong>
+          <span class="badge ${a.status}">${a.status}</span>
+        </div>
+        <div style="color:#5a7078;">${a.serviceType || ''}${a.technicianName ? ' · ' + a.technicianName : ''}</div>
+        ${chem ? `<div style="color:#5a7078;">${chem}</div>` : ''}
+        ${photoCount ? `<div style="color:#5a7078;">${photoCount} photo(s)</div>` : ''}
+      </div>
+    `;
+  }).join('') || '<div class="empty-state">No appointments yet.</div>';
+
+  const invRows = (c.invoices || []).map((i) => `
+    <div class="profile-history-item">
+      <div style="display:flex; justify-content:space-between; gap:8px;">
+        <strong>${money(i.amount)}</strong>
+        <span class="badge ${i.status}">${i.status}</span>
+      </div>
+      <div style="color:#5a7078;">${i.issuedDate || ''}${i.dueDate ? ' · due ' + i.dueDate : ''}</div>
+    </div>
+  `).join('') || '<div class="empty-state">No invoices yet.</div>';
+
+  const html = `
+    <div class="profile-grid">
+      <div class="profile-section">
+        <h3>Contact</h3>
+        <div class="row"><span class="label">Type:</span> ${typeLabel(c.type)}</div>
+        <div class="row"><span class="label">Phone:</span> ${c.phone || '—'}</div>
+        <div class="row"><span class="label">Email:</span> ${c.email || '—'}</div>
+        <div class="row"><span class="label">Address:</span> ${c.address || '—'}</div>
+        <div class="row"><span class="label">Owner:</span> ${c.ownerName || '—'}</div>
+        ${c.notes ? `<div class="row"><span class="label">Notes:</span> ${c.notes}</div>` : ''}
+      </div>
+      <div class="profile-section">
+        <h3>Equipment</h3>
+        ${hasEquipment ? `
+          <div class="row"><span class="label">Model:</span> ${[eq.brand, eq.model].filter(Boolean).join(' ') || '—'}</div>
+          <div class="row"><span class="label">Serial:</span> ${eq.serialNumber || '—'}</div>
+          <div class="row"><span class="label">Capacity:</span> ${eq.capacityGallons ? eq.capacityGallons + ' gal' : '—'}</div>
+          <div class="row"><span class="label">Filter:</span> ${eq.filterType || '—'}</div>
+          <div class="row"><span class="label">Filter status:</span> ${filterBadge(c)}</div>
+        ` : '<div class="row" style="color:#7a8f97;">No equipment on file yet.</div>'}
+      </div>
+    </div>
+    <div class="profile-grid">
+      <div class="profile-section">
+        <h3>Appointment history</h3>
+        <div style="max-height:260px; overflow-y:auto;">${apptRows}</div>
+      </div>
+      <div class="profile-section">
+        <h3>Invoice history</h3>
+        <div style="max-height:260px; overflow-y:auto;">${invRows}</div>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal()">Close</button>
+      <button class="btn primary" onclick="closeModal(); editCustomer(${c.id});">Edit customer</button>
+    </div>
+  `;
+  openModal(c.name, html, true);
+};
+
+function niceDateShort(dateStr) {
+  return new Date(dateStr + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+// ---------- Owners ----------
+async function loadOwners() {
+  state.owners = await api('/api/owners');
+  const tbody = document.querySelector('#ownerTable tbody');
+  tbody.innerHTML = state.owners.map((o) => `
+    <tr>
+      <td>${o.name}</td>
+      <td>${o.phone || ''}</td>
+      <td>${o.email || ''}</td>
+      <td>${o.username || '—'}</td>
+      <td>${o.propertyCount}</td>
+      <td>${o.billingMode === 'monthly' ? '<span class="badge draft">Monthly</span>' : '<span class="badge scheduled">Per job</span>'}</td>
+      <td>${o.hasPassword ? '<span class="badge completed">Yes</span>' : '<span class="badge scheduled">Not set</span>'}</td>
+      <td>
+        ${o.billingMode === 'monthly' ? `<button class="btn small primary" onclick="generateMonthlyInvoice(${o.id}, '${o.name.replace(/'/g, "\\'")}')">Generate monthly invoice</button>` : ''}
+        <button class="btn small" onclick="viewOwnerPortal(${o.id})">View portal</button>
+        <button class="btn small" onclick="editOwner(${o.id})">Edit</button>
+        <button class="btn small danger" onclick="deleteOwner(${o.id})">Delete</button>
+      </td>
+    </tr>
+  `).join('') || '<tr><td colspan="8" class="empty-state">No owner accounts yet. Create one from the Customers tab when editing a property.</td></tr>';
+}
+
+function ownerForm(o = {}) {
+  const pricing = o.customPricing || {};
+  const pricingRows = state.services.length
+    ? state.services.map((s) => `
+        <label style="flex-direction:row; align-items:center; justify-content:space-between; gap:10px;">
+          <span>${s.name} <span style="color:var(--text-faint); font-weight:400;">(catalog: ${money(s.defaultPrice)})</span></span>
+          <input type="number" step="0.01" style="width:110px;" id="f_price_${s.id}" value="${pricing[s.id] !== undefined ? pricing[s.id] : ''}" placeholder="default" />
+        </label>
+      `).join('')
+    : '<div class="portal-hint" style="margin:0;">Add services in Settings → Service catalog first, then come back here to set this owner\'s custom prices.</div>';
+  return `
+    <label>Name (required)<input id="f_oname" value="${o.name || ''}" /></label>
+    <label>Phone<input id="f_ophone" value="${o.phone || ''}" /></label>
+    <label>Email<input id="f_oemail" value="${o.email || ''}" /></label>
+    <label>Username<input id="f_ousername" value="${o.username || ''}" autocomplete="off" /></label>
+    <label>Password ${o.id ? '<span style="font-weight:400;">(leave blank to keep current)</span>' : ''}<input type="password" id="f_opassword" autocomplete="new-password" /></label>
+    <label>Billing
+      <select id="f_obillingMode">
+        <option value="perJob" ${o.billingMode !== 'monthly' ? 'selected' : ''}>Per job (invoice as each visit is completed)</option>
+        <option value="monthly" ${o.billingMode === 'monthly' ? 'selected' : ''}>Monthly combined (bundle all jobs into one invoice at month end)</option>
+      </select>
+    </label>
+
+    <div style="display:flex; flex-direction: column; gap: 10px; border-top: 1px solid var(--border); padding-top: 12px;">
+      <div style="font-size:13px; font-weight:600; color:#33505c;">Custom pricing (optional)</div>
+      <p class="portal-hint" style="margin:0;">Overrides the catalog price for every property linked to this owner. Leave blank to use the catalog default.</p>
+      ${pricingRows}
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal()">Cancel</button>
+      <button class="btn primary" id="saveOwnerBtn">Save</button>
+    </div>
+  `;
+}
+
+function readOwnerForm() {
+  const customPricing = {};
+  state.services.forEach((s) => {
+    const el = document.getElementById(`f_price_${s.id}`);
+    if (el && el.value !== '') customPricing[s.id] = el.value;
+  });
+  return {
+    name: document.getElementById('f_oname').value,
+    phone: document.getElementById('f_ophone').value,
+    email: document.getElementById('f_oemail').value,
+    username: document.getElementById('f_ousername').value,
+    password: document.getElementById('f_opassword').value,
+    billingMode: document.getElementById('f_obillingMode').value,
+    customPricing,
+  };
+}
+
+document.getElementById('newOwnerBtn').addEventListener('click', async () => {
+  if (state.services.length === 0) state.services = await api('/api/services');
+  openModal('New Owner', ownerForm(), true);
+  document.getElementById('saveOwnerBtn').addEventListener('click', async () => {
+    try {
+      await api('/api/owners', { method: 'POST', body: JSON.stringify(readOwnerForm()) });
+      closeModal(); loadOwners();
+    } catch (e) {
+      alert('Could not save owner: ' + e.message);
+    }
+  });
+});
+
+window.editOwner = async (id) => {
+  if (state.services.length === 0) state.services = await api('/api/services');
+  const o = state.owners.find((x) => x.id === id);
+  openModal('Edit Owner', ownerForm(o), true);
+  document.getElementById('saveOwnerBtn').addEventListener('click', async () => {
+    try {
+      await api('/api/owners/' + id, { method: 'PUT', body: JSON.stringify(readOwnerForm()) });
+      closeModal(); loadOwners();
+    } catch (e) {
+      alert('Could not save owner: ' + e.message);
+    }
+  });
+};
+
+window.generateMonthlyInvoice = async (ownerId, ownerName) => {
+  const defaultMonth = todayStr().slice(0, 7);
+  const month = prompt(`Generate a combined invoice for ${ownerName} — which month? (YYYY-MM)`, defaultMonth);
+  if (!month) return;
+  try {
+    const result = await api(`/api/owners/${ownerId}/generate-monthly-invoice`, {
+      method: 'POST', body: JSON.stringify({ month }),
+    });
+    if (result.created) {
+      alert(`Created a combined invoice for ${money(result.invoice.amount)}.`);
+    } else {
+      alert(result.message || 'Nothing to bill for that month.');
+    }
+  } catch (e) {
+    alert('Could not generate invoice: ' + e.message);
+  }
+};
+
+window.deleteOwner = async (id) => {
+  if (!confirm('Delete this owner account? Any linked properties will be unlinked, not deleted.')) return;
+  try {
+    await api('/api/owners/' + id, { method: 'DELETE' });
+    loadOwners();
+  } catch (e) {
+    alert('Could not delete owner: ' + e.message);
+  }
+};
+
+document.getElementById('bulkCreateOwnersBtn').addEventListener('click', async () => {
+  if (!confirm(
+    "Create an owner account for every customer that doesn't have one yet? " +
+    'Customers sharing an email or phone number will be grouped onto one account. ' +
+    'No passwords are set — accounts can\'t log in until you add one.'
+  )) return;
+  const btn = document.getElementById('bulkCreateOwnersBtn');
+  btn.disabled = true;
+  try {
+    const result = await api('/api/owners/bulk-create-from-customers', { method: 'POST' });
+    alert(
+      `Created ${result.ownersCreated} owner account(s) and linked ${result.customersLinked} customer(s).` +
+      (result.alreadyLinked ? `\n${result.alreadyLinked} customer(s) already had an owner and were left alone.` : '')
+    );
+    await loadOwners();
+    await loadCustomers();
+  } catch (e) {
+    alert('Could not auto-link owners: ' + e.message);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+// ---------- Technicians ----------
+async function loadTechnicians() {
+  state.technicians = await api('/api/technicians');
+  const tbody = document.querySelector('#techTable tbody');
+  tbody.innerHTML = state.technicians.map((t) => `
+    <tr>
+      <td>${t.name}</td>
+      <td>${t.phone || ''}</td>
+      <td>${t.email || ''}</td>
+      <td>${t.username || '—'}</td>
+      <td>${t.hasPassword ? '<span class="badge completed">Yes</span>' : '<span class="badge scheduled">Not set</span>'}</td>
+      <td>
+        <button class="btn small" onclick="viewTechPortal(${t.id})">View portal</button>
+        <button class="btn small" onclick="editTech(${t.id})">Edit</button>
+        <button class="btn small danger" onclick="deleteTech(${t.id})">Delete</button>
+      </td>
+    </tr>
+  `).join('') || '<tr><td colspan="6" class="empty-state">No technicians yet.</td></tr>';
+}
+
+window.viewTechPortal = async (id) => {
+  await api('/api/tech-auth/admin-view/' + id, { method: 'POST' });
+  window.open('/tech', '_blank');
+};
+
+function techForm(t = {}) {
+  return `
+    <label>Name<input id="f_tname" value="${t.name || ''}" /></label>
+    <label>Phone<input id="f_tphone" value="${t.phone || ''}" /></label>
+    <label>Email<input id="f_temail" value="${t.email || ''}" /></label>
+    <div style="display:flex; flex-direction: column; gap: 12px; border-top: 1px solid #eef1f2; padding-top: 12px;">
+      <div style="font-size:13px; font-weight:600; color:#33505c;">Technician portal login</div>
+      <label>Username<input id="f_tusername" value="${t.username || ''}" autocomplete="off" /></label>
+      <label>Password ${t.id ? '<span style="font-weight:400;">(leave blank to keep current)</span>' : ''}<input type="password" id="f_tpassword" autocomplete="new-password" /></label>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal()">Cancel</button>
+      <button class="btn primary" id="saveTechBtn">Save</button>
+    </div>
+  `;
+}
+
+document.getElementById('newTechBtn').addEventListener('click', () => {
+  openModal('New Technician', techForm());
+  document.getElementById('saveTechBtn').addEventListener('click', async () => {
+    try {
+      await api('/api/technicians', { method: 'POST', body: JSON.stringify(readTechForm()) });
+      closeModal(); loadTechnicians();
+    } catch (e) {
+      alert('Could not save technician: ' + e.message);
+    }
+  });
+});
+
+function readTechForm() {
+  return {
+    name: document.getElementById('f_tname').value,
+    phone: document.getElementById('f_tphone').value,
+    email: document.getElementById('f_temail').value,
+    username: document.getElementById('f_tusername').value,
+    password: document.getElementById('f_tpassword').value,
+  };
+}
+
+window.editTech = (id) => {
+  const t = state.technicians.find((x) => x.id === id);
+  openModal('Edit Technician', techForm(t));
+  document.getElementById('saveTechBtn').addEventListener('click', async () => {
+    try {
+      await api('/api/technicians/' + id, { method: 'PUT', body: JSON.stringify(readTechForm()) });
+      closeModal(); loadTechnicians();
+    } catch (e) {
+      alert('Could not save technician: ' + e.message);
+    }
+  });
+};
+
+window.deleteTech = async (id) => {
+  if (!confirm('Delete this technician?')) return;
+  try {
+    await api('/api/technicians/' + id, { method: 'DELETE' });
+    loadTechnicians();
+  } catch (e) {
+    alert('Could not delete technician: ' + e.message);
+  }
+};
+
+// ---------- Appointments / Calendar ----------
+// state.calendarMonth: first-of-month Date representing the month currently shown
+state.calendarMonth = (() => {
+  const d = new Date();
+  return new Date(d.getFullYear(), d.getMonth(), 1);
+})();
+
+const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+function fmtDate(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+async function loadAppointments() {
+  if (state.customers.length === 0) state.customers = await api('/api/customers');
+  if (state.technicians.length === 0) state.technicians = await api('/api/technicians');
+  state.appointments = await api('/api/appointments');
+  renderCalendarGrid();
+}
+
+function renderCalendarGrid() {
+  const monthStart = state.calendarMonth;
+  const year = monthStart.getFullYear();
+  const month = monthStart.getMonth();
+  document.getElementById('calMonthLabel').textContent =
+    monthStart.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+
+  const firstDayOfWeek = new Date(year, month, 1).getDay(); // 0=Sun
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const gridStart = new Date(year, month, 1 - firstDayOfWeek);
+
+  const apptsByDate = {};
+  state.appointments.forEach((a) => {
+    if (!apptsByDate[a.date]) apptsByDate[a.date] = [];
+    apptsByDate[a.date].push(a);
+  });
+  Object.values(apptsByDate).forEach((list) => list.sort((a, b) => a.startTime.localeCompare(b.startTime)));
+
+  const today = todayStr();
+  const grid = document.getElementById('calGrid');
+  let html = DAY_LABELS.map((d) => `<div class="cal-daylabel">${d}</div>`).join('');
+
+  for (let i = 0; i < 42; i++) {
+    const cellDate = new Date(gridStart);
+    cellDate.setDate(gridStart.getDate() + i);
+    const dateStr = fmtDate(cellDate);
+    const inMonth = cellDate.getMonth() === month;
+    const appts = apptsByDate[dateStr] || [];
+    const chips = appts.slice(0, 3).map((a) =>
+      `<div class="cal-appt-chip ${a.status}">${a.startTime} ${a.customerName}</div>`
+    ).join('');
+    const more = appts.length > 3 ? `<div class="cal-more">+${appts.length - 3} more</div>` : '';
+    html += `
+      <div class="cal-cell ${inMonth ? '' : 'other-month'} ${dateStr === today ? 'is-today' : ''}" onclick="openDayDetail('${dateStr}')">
+        <div class="cal-daynum">${cellDate.getDate()}</div>
+        ${chips}${more}
+      </div>
+    `;
+    // Stop after the row that finishes the month, to avoid a trailing all-other-month row
+    if (i >= firstDayOfWeek + daysInMonth - 1 && (i + 1) % 7 === 0) break;
+  }
+
+  grid.innerHTML = html;
+}
+
+document.getElementById('calPrevBtn').addEventListener('click', () => {
+  state.calendarMonth = new Date(state.calendarMonth.getFullYear(), state.calendarMonth.getMonth() - 1, 1);
+  renderCalendarGrid();
+});
+document.getElementById('calNextBtn').addEventListener('click', () => {
+  state.calendarMonth = new Date(state.calendarMonth.getFullYear(), state.calendarMonth.getMonth() + 1, 1);
+  renderCalendarGrid();
+});
+document.getElementById('calTodayBtn').addEventListener('click', () => {
+  const d = new Date();
+  state.calendarMonth = new Date(d.getFullYear(), d.getMonth(), 1);
+  renderCalendarGrid();
+});
+
+window.openDayDetail = (dateStr) => {
+  const appts = (state.appointments.filter((a) => a.date === dateStr))
+    .sort((a, b) => a.startTime.localeCompare(b.startTime));
+  const niceDate = new Date(dateStr + 'T00:00:00').toLocaleDateString(undefined, {
+    weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
+  });
+  const list = appts.length
+    ? appts.map((a) => `
+        <div class="appt-card">
+          <div>
+            <strong>${a.startTime}${a.endTime ? '–' + a.endTime : ''} — ${a.customerName}</strong>
+            <div class="meta">${a.serviceType} · Tech: ${a.technicianName}</div>
+            ${(a.chlorine || a.ph || a.alkalinity) ? `<div class="meta">Chemistry: ${[a.chlorine && 'Cl ' + a.chlorine, a.ph && 'pH ' + a.ph, a.alkalinity && 'Alk ' + a.alkalinity].filter(Boolean).join(' · ')}</div>` : ''}
+            ${a.reminderSentAt ? `<div class="meta">Reminder texted ✓</div>` : ''}
+            ${a.reviewRequestSentAt ? `<div class="meta">Review requested ✓</div>` : ''}
+            ${apptPhotosThumbs(a)}
+          </div>
+          <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+            <span class="badge ${a.status}">${a.status}</span>
+            ${a.customerPhone && a.status !== 'completed' ? `<button class="btn small" onclick="sendReminder(${a.id})">${a.reminderSentAt ? 'Re-send text' : 'Text reminder'}</button>` : ''}
+            ${a.customerPhone && a.status === 'completed' ? `<button class="btn small" onclick="sendReviewRequest(${a.id})">${a.reviewRequestSentAt ? 'Re-send review request' : 'Send review request'}</button>` : ''}
+            <button class="btn small" onclick="editAppt(${a.id})">Edit</button>
+            <button class="btn small danger" onclick="deleteAppt(${a.id})">Delete</button>
+          </div>
+        </div>
+      `).join('')
+    : '<div class="empty-state">No appointments this day.</div>';
+  const techOptions = state.technicians.map((t) => `<option value="${t.id}">${t.name}</option>`).join('');
+  openModal(niceDate, `
+    <div class="day-detail-list">${list}</div>
+    ${appts.length ? `
+      <div style="display:flex; align-items:center; gap:8px; border-top:1px solid #eef1f2; padding-top:12px;">
+        <span style="font-size:13px; color:#46606b;">Assign this whole day to:</span>
+        <select id="dayAssignTechSelect" style="flex:1;">
+          <option value="">Unassigned</option>
+          ${techOptions}
+        </select>
+        <button class="btn small" onclick="assignDayToTechnician('${dateStr}')">Assign</button>
+      </div>
+    ` : ''}
+    <div class="modal-actions">
+      <button class="btn primary" onclick="closeModal(); openNewApptModal('${dateStr}');">+ Add appointment</button>
+    </div>
+  `);
+};
+
+window.assignDayToTechnician = async (dateStr) => {
+  const technicianId = document.getElementById('dayAssignTechSelect').value || null;
+  try {
+    const result = await api('/api/appointments/bulk-assign-technician', {
+      method: 'POST',
+      body: JSON.stringify({ date: dateStr, technicianId }),
+    });
+    await loadAppointments();
+    openDayDetail(dateStr);
+    alert(`Assigned ${result.count} appointment(s) on ${dateStr} to ${result.technicianName}.`);
+  } catch (e) {
+    alert('Could not assign: ' + e.message);
+  }
+};
+
+function apptPhotosThumbs(a) {
+  const photos = a.photos || [];
+  if (photos.length === 0) return '';
+  return `<div style="display:flex; gap:6px; margin-top:6px; flex-wrap:wrap;">
+    ${photos.map((p) => `
+      <a href="${p.url}" target="_blank" title="${p.type} photo">
+        <img src="${p.url}" alt="${p.type}" style="width:48px; height:48px; object-fit:cover; border-radius:5px;" />
+      </a>
+    `).join('')}
+  </div>`;
+}
+
+window.sendReminder = async (id) => {
+  const a = state.appointments.find((x) => x.id === id);
+  try {
+    const result = await api(`/api/appointments/${id}/send-reminder`, { method: 'POST' });
+    await loadAppointments();
+    openDayDetail(a.date);
+    if (result.smsDryRun) {
+      alert('Twilio isn\'t configured yet, so no text was actually sent — check the server logs for a preview of what would have gone out.');
+    }
+  } catch (e) {
+    alert('Could not send reminder: ' + e.message);
+  }
+};
+
+window.sendReviewRequest = async (id) => {
+  const a = state.appointments.find((x) => x.id === id);
+  try {
+    const result = await api(`/api/appointments/${id}/send-review-request`, { method: 'POST' });
+    await loadAppointments();
+    openDayDetail(a.date);
+    if (result.smsDryRun) {
+      alert('Twilio isn\'t configured yet, so no text was actually sent — check the server logs for a preview of what would have gone out.');
+    }
+  } catch (e) {
+    alert('Could not send review request: ' + e.message);
+  }
+};
+
+function customerOptions(selectedId) {
+  return state.customers.map((c) => `<option value="${c.id}" ${c.id === selectedId ? 'selected' : ''}>${c.name}</option>`).join('');
+}
+function techOptions(selectedId) {
+  return '<option value="">Unassigned</option>' + state.technicians.map((t) => `<option value="${t.id}" ${t.id === selectedId ? 'selected' : ''}>${t.name}</option>`).join('');
+}
+
+function apptForm(a = {}) {
+  const isNew = !a.id;
+  return `
+    <label>Customer
+      <select id="f_customerId" ${isNew ? 'onchange="onApptCustomerChange()"' : ''}>${customerOptions(a.customerId)}</select>
+    </label>
+    <label>Technician
+      <select id="f_technicianId">${techOptions(a.technicianId)}</select>
+    </label>
+    <label>Date<input type="date" id="f_date" value="${a.date || todayStr()}" /></label>
+    <label>Start time<input type="time" id="f_startTime" value="${a.startTime || ''}" /></label>
+    <label>End time<input type="time" id="f_endTime" value="${a.endTime || ''}" /></label>
+    <label>Service (optional — picks a price for auto-invoicing)
+      <select id="f_serviceId" onchange="onApptServiceChange()">
+        <option value="">Custom / none</option>
+        ${state.services.map((s) => `<option value="${s.id}" ${s.id === a.serviceId ? 'selected' : ''}>${s.name} — ${money(s.defaultPrice)}</option>`).join('')}
+      </select>
+    </label>
+    <label>Service type<input id="f_serviceType" value="${a.serviceType || ''}" placeholder="e.g. Routine cleaning, Repair" /></label>
+    <label>Status
+      <select id="f_status">
+        <option value="scheduled" ${a.status === 'scheduled' ? 'selected' : ''}>Scheduled</option>
+        <option value="completed" ${a.status === 'completed' ? 'selected' : ''}>Completed</option>
+        <option value="cancelled" ${a.status === 'cancelled' ? 'selected' : ''}>Cancelled</option>
+      </select>
+    </label>
+    <label>Notes<textarea id="f_apptNotes" rows="3">${a.notes || ''}</textarea></label>
+
+    <div style="display:flex; flex-direction: column; gap: 12px; border-top: 1px solid #eef1f2; padding-top: 12px;">
+      <div style="font-size:13px; font-weight:600; color:#33505c;">Water chemistry (optional)</div>
+      <div style="display:flex; gap:10px;">
+        <label style="flex:1;">Chlorine<input id="f_chlorine" value="${a.chlorine || ''}" placeholder="ppm" /></label>
+        <label style="flex:1;">pH<input id="f_ph" value="${a.ph || ''}" /></label>
+        <label style="flex:1;">Alkalinity<input id="f_alkalinity" value="${a.alkalinity || ''}" placeholder="ppm" /></label>
+      </div>
+    </div>
+
+    ${isNew ? `
+      <div style="display:flex; flex-direction: column; gap: 12px; border-top: 1px solid #eef1f2; padding-top: 12px;">
+        <div style="font-size:13px; font-weight:600; color:#33505c;">Repeats</div>
+        <label>Frequency
+          <select id="f_recurrence" onchange="onApptRecurrenceChange()">
+            <option value="none">Does not repeat</option>
+            <option value="weekly">Weekly</option>
+            <option value="biweekly">Every 2 weeks</option>
+            <option value="every4weeks">Every 4 weeks</option>
+            <option value="monthly">Monthly</option>
+            <option value="custom">Custom</option>
+          </select>
+        </label>
+        <label id="f_recurrenceCustomWrap" style="display:none;">Custom — every N days
+          <input type="number" min="1" id="f_recurrenceCustomDays" placeholder="e.g. 21" />
+        </label>
+        <label>Repeat until <span style="font-weight:400;">(optional — defaults to 6 months out)</span>
+          <input type="date" id="f_recurrenceEnd" />
+        </label>
+      </div>
+    ` : (a.seriesId ? '<div class="portal-hint" style="margin:0;">Part of a recurring series — editing only changes this one visit.</div>' : '')}
+
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal()">Cancel</button>
+      <button class="btn primary" id="saveApptBtn">Save</button>
+    </div>
+  `;
+}
+
+window.onApptServiceChange = () => {
+  const sel = document.getElementById('f_serviceId');
+  const service = state.services.find((s) => String(s.id) === sel.value);
+  if (service) document.getElementById('f_serviceType').value = service.name;
+};
+
+window.onApptRecurrenceChange = () => {
+  const wrap = document.getElementById('f_recurrenceCustomWrap');
+  if (wrap) wrap.style.display = document.getElementById('f_recurrence').value === 'custom' ? '' : 'none';
+};
+
+// Defaults the "Repeats" dropdown to whatever service frequency is saved on the
+// selected customer, so scheduling their first visit doesn't require re-picking a
+// frequency that's already on file. Only runs for new appointments (isNew).
+window.onApptCustomerChange = () => {
+  const recurrenceEl = document.getElementById('f_recurrence');
+  if (!recurrenceEl) return;
+  const customerId = Number(document.getElementById('f_customerId').value);
+  const customer = state.customers.find((c) => c.id === customerId);
+  if (customer && customer.serviceFrequency) {
+    recurrenceEl.value = customer.serviceFrequency;
+    if (customer.serviceFrequency === 'custom' && customer.customFrequencyDays) {
+      document.getElementById('f_recurrenceCustomDays').value = customer.customFrequencyDays;
+    }
+  } else {
+    recurrenceEl.value = 'none';
+  }
+  onApptRecurrenceChange();
+};
+
+function readApptForm() {
+  const data = {
+    customerId: document.getElementById('f_customerId').value,
+    technicianId: document.getElementById('f_technicianId').value || null,
+    date: document.getElementById('f_date').value,
+    startTime: document.getElementById('f_startTime').value,
+    endTime: document.getElementById('f_endTime').value,
+    serviceId: document.getElementById('f_serviceId').value || null,
+    serviceType: document.getElementById('f_serviceType').value,
+    status: document.getElementById('f_status').value,
+    notes: document.getElementById('f_apptNotes').value,
+    chlorine: document.getElementById('f_chlorine').value,
+    ph: document.getElementById('f_ph').value,
+    alkalinity: document.getElementById('f_alkalinity').value,
+  };
+  const recurrenceEl = document.getElementById('f_recurrence');
+  if (recurrenceEl) {
+    data.recurrence = recurrenceEl.value;
+    data.recurrenceEndDate = document.getElementById('f_recurrenceEnd').value || null;
+    if (recurrenceEl.value === 'custom') {
+      data.recurrenceCustomDays = document.getElementById('f_recurrenceCustomDays').value || null;
+    }
+  }
+  return data;
+}
+
+async function openNewApptModal(dateStr) {
+  if (state.customers.length === 0) state.customers = await api('/api/customers');
+  if (state.technicians.length === 0) state.technicians = await api('/api/technicians');
+  if (state.services.length === 0) state.services = await api('/api/services');
+  if (state.customers.length === 0) { alert('Add a customer first.'); return; }
+  openModal('New Appointment', apptForm(dateStr ? { date: dateStr } : {}));
+  onApptCustomerChange();
+  document.getElementById('saveApptBtn').addEventListener('click', async () => {
+    try {
+      await api('/api/appointments', { method: 'POST', body: JSON.stringify(readApptForm()) });
+      closeModal(); loadAppointments();
+    } catch (e) {
+      alert('Could not save appointment: ' + e.message);
+    }
+  });
+}
+window.openNewApptModal = openNewApptModal;
+
+document.getElementById('newApptBtn').addEventListener('click', () => openNewApptModal());
+
+function openBulkImportModal() {
+  const html = `
+    <p class="portal-sub" style="margin:0 0 4px;">
+      One line per day: <code>YYYY-MM-DD: Name One, Name Two, Name Three</code>.
+      Each name is matched against your existing customers — anything that can't be
+      matched confidently is listed afterward instead of guessed at. Times are just
+      spread through the day as placeholders; actual visit order comes from route
+      optimization (Settings tab).
+    </p>
+    <textarea id="bulkImportText" rows="14" style="width:100%; font-family:monospace; font-size:12px;" placeholder="2026-08-02: Chelsea, Chad, Mike, Josh C, Lo, Tim"></textarea>
+    <div id="bulkImportResult"></div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal()">Close</button>
+      <button class="btn primary" id="bulkImportRunBtn">Import</button>
+    </div>
+  `;
+  openModal('Bulk import appointments', html, true);
+  document.getElementById('bulkImportRunBtn').addEventListener('click', async () => {
+    const btn = document.getElementById('bulkImportRunBtn');
+    const resultEl = document.getElementById('bulkImportResult');
+    const text = document.getElementById('bulkImportText').value;
+    btn.disabled = true;
+    btn.textContent = 'Importing…';
+    try {
+      const result = await api('/api/appointments/bulk-import-text', { method: 'POST', body: JSON.stringify({ text }) });
+      let html2 = `<div class="portal-hint" style="margin:10px 0;">Created ${result.createdCount} appointment(s).${result.unmatchedCount ? ` ${result.unmatchedCount} name(s) couldn't be matched.` : ''}${result.alreadyScheduledCount ? ` ${result.alreadyScheduledCount} were already on the books that day and were skipped (no duplicates created).` : ''}</div>`;
+      if (result.unmatched.length) {
+        html2 += `<div style="max-height:180px; overflow-y:auto; font-size:12px; background:#fef6f5; border-radius:6px; padding:8px;">
+          ${result.unmatched.map((u) => `${u.date} — "${u.name}"`).join('<br>')}
+        </div>`;
+      }
+      if (result.skippedLines && result.skippedLines.length) {
+        html2 += `<div class="portal-hint" style="margin:8px 0 0;">${result.skippedLines.length} line(s) didn't match the expected format and were skipped.</div>`;
+      }
+      resultEl.innerHTML = html2;
+      loadAppointments();
+    } catch (e) {
+      resultEl.innerHTML = `<div class="portal-error">${e.message}</div>`;
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Import';
+    }
+  });
+}
+document.getElementById('bulkImportBtn').addEventListener('click', openBulkImportModal);
+
+window.editAppt = async (id) => {
+  const a = state.appointments.find((x) => x.id === id);
+  if (state.services.length === 0) state.services = await api('/api/services');
+  openModal('Edit Appointment', apptForm(a));
+  document.getElementById('saveApptBtn').addEventListener('click', async () => {
+    try {
+      await api('/api/appointments/' + id, { method: 'PUT', body: JSON.stringify(readApptForm()) });
+      closeModal(); loadAppointments();
+    } catch (e) {
+      alert('Could not save appointment: ' + e.message);
+    }
+  });
+};
+
+window.deleteAppt = async (id) => {
+  const a = state.appointments.find((x) => x.id === id);
+  let scope = '';
+  if (a && a.seriesId) {
+    const deleteAll = confirm('This is part of a recurring series. Click OK to delete this AND all future visits in the series, or Cancel to delete just this one.');
+    scope = deleteAll ? '?scope=series' : '';
+    if (!deleteAll && !confirm('Delete just this one appointment?')) return;
+  } else if (!confirm('Delete this appointment?')) {
+    return;
+  }
+  try {
+    await api('/api/appointments/' + id + scope, { method: 'DELETE' });
+    closeModal();
+    loadAppointments();
+  } catch (e) {
+    alert('Could not delete appointment: ' + e.message);
+  }
+};
+
+// ---------- Invoices ----------
+function isOverdue(i) {
+  return i.status === 'sent' && !!i.dueDate && i.dueDate < todayStr();
+}
+
+function money(n) {
+  return '$' + Number(n || 0).toFixed(2);
+}
+
+function renderInvoiceStats() {
+  const invoices = state.invoices;
+  const thisMonth = todayStr().slice(0, 7); // YYYY-MM
+  const totalPaid = invoices.filter((i) => i.status === 'paid').reduce((sum, i) => sum + Number(i.amount || 0), 0);
+  const paidThisMonth = invoices
+    .filter((i) => i.status === 'paid' && (i.issuedDate || '').startsWith(thisMonth))
+    .reduce((sum, i) => sum + Number(i.amount || 0), 0);
+  const outstanding = invoices
+    .filter((i) => i.status === 'sent')
+    .reduce((sum, i) => sum + Number(i.amount || 0), 0);
+  const overdueInvoices = invoices.filter(isOverdue);
+  const overdueTotal = overdueInvoices.reduce((sum, i) => sum + Number(i.amount || 0), 0);
+
+  document.getElementById('invoiceStats').innerHTML = `
+    <div class="stat-card">
+      <div class="stat-label">Total revenue (paid)</div>
+      <div class="stat-value">${money(totalPaid)}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Revenue this month</div>
+      <div class="stat-value">${money(paidThisMonth)}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Outstanding (sent)</div>
+      <div class="stat-value">${money(outstanding)}</div>
+    </div>
+    <div class="stat-card ${overdueInvoices.length ? 'stat-overdue' : ''}">
+      <div class="stat-label">Overdue</div>
+      <div class="stat-value">${money(overdueTotal)} <span style="font-size:14px; font-weight:400;">(${overdueInvoices.length})</span></div>
+    </div>
+  `;
+}
+
+function renderInvoiceTable() {
+  const filter = document.getElementById('invoiceStatusFilter').value;
+  let rows = state.invoices;
+  if (filter === 'overdue') rows = rows.filter(isOverdue);
+  else if (filter) rows = rows.filter((i) => i.status === filter && !(filter === 'sent' && isOverdue(i)));
+
+  const tbody = document.querySelector('#invoiceTable tbody');
+  tbody.innerHTML = rows.map((i) => {
+    const overdue = isOverdue(i);
+    return `
+    <tr class="${overdue ? 'row-overdue' : ''}">
+      <td>${i.customerName}</td>
+      <td>${money(i.amount)}</td>
+      <td>${i.issuedDate || ''}</td>
+      <td>${i.dueDate || ''}</td>
+      <td>${overdue ? '<span class="badge cancelled">Overdue</span>' : `<span class="badge ${i.status}">${i.status}</span>`}${i.stripeSessionId ? ' <span class="badge completed">Paid online</span>' : ''}</td>
+      <td>
+        ${i.status !== 'paid' ? `<button class="btn small" onclick="copyPayLink(${i.id})">Copy pay link</button>` : ''}
+        ${i.isCombined
+          ? `<button class="btn small" onclick="viewInvoiceLineItems(${i.id})">View jobs</button>
+             <button class="btn small" onclick="editCombinedInvoice(${i.id})">Edit</button>`
+          : `<button class="btn small" onclick="editInvoice(${i.id})">Edit</button>`}
+        <button class="btn small danger" onclick="deleteInvoice(${i.id})">Delete</button>
+      </td>
+    </tr>
+  `;
+  }).join('') || '<tr><td colspan="6" class="empty-state">No invoices found.</td></tr>';
+}
+
+window.viewInvoiceLineItems = (id) => {
+  const i = state.invoices.find((x) => x.id === id);
+  const rows = (i.lineItems || []).map((li) => `
+    <div class="profile-history-item">
+      <strong>${li.date} — ${li.customerName}</strong>
+      <div class="meta">${li.serviceType} · ${money(li.amount)}</div>
+    </div>
+  `).join('') || '<div class="empty-state">No jobs on this invoice.</div>';
+  openModal(`Jobs on invoice #${i.id}`, `
+    ${rows}
+    <div class="modal-actions"><button class="btn" onclick="closeModal()">Close</button></div>
+  `);
+};
+
+window.editCombinedInvoice = (id) => {
+  const i = state.invoices.find((x) => x.id === id);
+  openModal('Edit Combined Invoice', `
+    <p class="portal-hint" style="margin:0;">${i.customerName} — total ${money(i.amount)}. The amount and included jobs come from "Generate monthly invoice"; only status/dates/notes can be edited here.</p>
+    <label>Issued date<input type="date" id="f_ciIssuedDate" value="${i.issuedDate || todayStr()}" /></label>
+    <label>Due date<input type="date" id="f_ciDueDate" value="${i.dueDate || ''}" /></label>
+    <label>Status
+      <select id="f_ciStatus">
+        <option value="draft" ${i.status === 'draft' ? 'selected' : ''}>Draft</option>
+        <option value="sent" ${i.status === 'sent' ? 'selected' : ''}>Sent</option>
+        <option value="paid" ${i.status === 'paid' ? 'selected' : ''}>Paid</option>
+      </select>
+    </label>
+    <label>Notes<textarea id="f_ciNotes" rows="3">${i.notes || ''}</textarea></label>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal()">Cancel</button>
+      <button class="btn primary" id="saveCombinedInvoiceBtn">Save</button>
+    </div>
+  `);
+  document.getElementById('saveCombinedInvoiceBtn').addEventListener('click', async () => {
+    try {
+      await api('/api/invoices/' + id, { method: 'PUT', body: JSON.stringify({
+        issuedDate: document.getElementById('f_ciIssuedDate').value,
+        dueDate: document.getElementById('f_ciDueDate').value,
+        status: document.getElementById('f_ciStatus').value,
+        notes: document.getElementById('f_ciNotes').value,
+      }) });
+      closeModal(); loadInvoices();
+    } catch (e) {
+      alert('Could not save invoice: ' + e.message);
+    }
+  });
+};
+
+window.copyPayLink = (id) => {
+  const url = `${window.location.origin}/pay/${id}`;
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(url).then(
+      () => alert('Payment link copied to clipboard:\n' + url),
+      () => prompt('Copy this payment link:', url)
+    );
+  } else {
+    prompt('Copy this payment link:', url);
+  }
+};
+
+async function loadInvoices() {
+  if (state.customers.length === 0) state.customers = await api('/api/customers');
+  state.invoices = await api('/api/invoices');
+  renderInvoiceStats();
+  renderInvoiceTable();
+}
+
+document.getElementById('invoiceStatusFilter').addEventListener('change', renderInvoiceTable);
+
+function invoiceForm(i = {}) {
+  return `
+    <label>Customer
+      <select id="f_icustomerId">${customerOptions(i.customerId)}</select>
+    </label>
+    <label>Amount ($)<input type="number" step="0.01" id="f_amount" value="${i.amount || ''}" /></label>
+    <label>Issued date<input type="date" id="f_issuedDate" value="${i.issuedDate || todayStr()}" /></label>
+    <label>Due date<input type="date" id="f_dueDate" value="${i.dueDate || ''}" /></label>
+    <label>Status
+      <select id="f_istatus">
+        <option value="draft" ${i.status === 'draft' ? 'selected' : ''}>Draft</option>
+        <option value="sent" ${i.status === 'sent' ? 'selected' : ''}>Sent</option>
+        <option value="paid" ${i.status === 'paid' ? 'selected' : ''}>Paid</option>
+      </select>
+    </label>
+    <label>Notes<textarea id="f_invNotes" rows="3">${i.notes || ''}</textarea></label>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal()">Cancel</button>
+      <button class="btn primary" id="saveInvoiceBtn">Save</button>
+    </div>
+  `;
+}
+
+function readInvoiceForm() {
+  return {
+    customerId: document.getElementById('f_icustomerId').value,
+    amount: document.getElementById('f_amount').value,
+    issuedDate: document.getElementById('f_issuedDate').value,
+    dueDate: document.getElementById('f_dueDate').value,
+    status: document.getElementById('f_istatus').value,
+    notes: document.getElementById('f_invNotes').value,
+  };
+}
+
+document.getElementById('newInvoiceBtn').addEventListener('click', async () => {
+  if (state.customers.length === 0) state.customers = await api('/api/customers');
+  if (state.customers.length === 0) { alert('Add a customer first.'); return; }
+  openModal('New Invoice', invoiceForm());
+  document.getElementById('saveInvoiceBtn').addEventListener('click', async () => {
+    try {
+      await api('/api/invoices', { method: 'POST', body: JSON.stringify(readInvoiceForm()) });
+      closeModal(); loadInvoices();
+    } catch (e) {
+      alert('Could not save invoice: ' + e.message);
+    }
+  });
+});
+
+window.editInvoice = (id) => {
+  const i = state.invoices.find((x) => x.id === id);
+  openModal('Edit Invoice', invoiceForm(i));
+  document.getElementById('saveInvoiceBtn').addEventListener('click', async () => {
+    try {
+      await api('/api/invoices/' + id, { method: 'PUT', body: JSON.stringify(readInvoiceForm()) });
+      closeModal(); loadInvoices();
+    } catch (e) {
+      alert('Could not save invoice: ' + e.message);
+    }
+  });
+};
+
+window.deleteInvoice = async (id) => {
+  if (!confirm('Delete this invoice?')) return;
+  try {
+    await api('/api/invoices/' + id, { method: 'DELETE' });
+    loadInvoices();
+  } catch (e) {
+    alert('Could not delete invoice: ' + e.message);
+  }
+};
+
+// ---------- Daily Schedule ----------
+async function loadSchedule() {
+  const dateInput = document.getElementById('schedDate');
+  if (!dateInput.value) dateInput.value = todayStr();
+  const date = dateInput.value;
+  const data = await api('/api/schedule/' + date);
+  const container = document.getElementById('schedByTech');
+  const techNames = Object.keys(data.byTechnician);
+  if (techNames.length === 0) {
+    container.innerHTML = '<div class="empty-state">No appointments scheduled for this date.</div>';
+    return;
+  }
+  container.innerHTML = techNames.map((techName) => {
+    const appts = data.byTechnician[techName];
+    const techId = appts[0].technician ? appts[0].technician.id : null;
+    return `
+      <div class="tech-group">
+        <h3>${techName} ${techId ? `<button class="btn small" onclick="copyTechText('${date}', ${techId})">Copy schedule text</button>` : ''}</h3>
+        ${appts.map((a) => `
+          <div class="appt-card">
+            <div>
+              <strong>${a.startTime}${a.endTime ? '–' + a.endTime : ''} — ${a.customer ? a.customer.name : 'Unknown'}</strong>
+              <div class="meta">${a.serviceType} ${a.customer && a.customer.address ? '· ' + a.customer.address : ''}</div>
+            </div>
+            <button class="btn small" onclick="copyCustomerText(${a.id})">Copy customer text</button>
+          </div>
+        `).join('')}
+      </div>
+    `;
+  }).join('');
+}
+
+document.getElementById('schedDate').addEventListener('change', loadSchedule);
+
+window.copyTechText = async (date, technicianId) => {
+  const data = await api(`/api/schedule/${date}/technician/${technicianId}/text`);
+  openTextModal(`Schedule for ${data.technician.name}`, data.text);
+};
+
+window.copyCustomerText = async (appointmentId) => {
+  const data = await api(`/api/schedule/appointment/${appointmentId}/customer-text`);
+  openTextModal(`Message to ${data.customer ? data.customer.name : 'customer'}`, data.text);
+};
+
+// ---------- Property Calendar (owner-submitted guest booking dates) ----------
+async function loadBookings() {
+  if (state.customers.length === 0) state.customers = await api('/api/customers');
+  const bookings = await api('/api/bookings');
+  state.bookings = bookings;
+
+  const filterSelect = document.getElementById('bookingCustomerFilter');
+  if (filterSelect.options.length <= 1) {
+    const vacationCustomers = state.customers.filter((c) => c.type === 'vacation').sort((a, b) => a.name.localeCompare(b.name));
+    filterSelect.innerHTML = '<option value="">All properties</option>' +
+      vacationCustomers.map((c) => `<option value="${c.id}">${c.name}</option>`).join('');
+  }
+
+  renderBookingsTable();
+}
+
+function renderBookingsTable() {
+  const filter = document.getElementById('bookingCustomerFilter').value;
+  let rows = state.bookings || [];
+  if (filter) rows = rows.filter((b) => b.customerId === Number(filter));
+  const tbody = document.querySelector('#bookingsTable tbody');
+  tbody.innerHTML = rows.map((b) => `
+    <tr>
+      <td>${b.customerName}</td>
+      <td>${b.startDate}</td>
+      <td>${b.endDate}</td>
+      <td>${b.notes || ''}</td>
+      <td><button class="btn small danger" onclick="deleteBooking(${b.id})">Remove</button></td>
+    </tr>
+  `).join('') || '<tr><td colspan="5" class="empty-state">No guest booking dates entered yet.</td></tr>';
+}
+
+document.getElementById('bookingCustomerFilter').addEventListener('change', renderBookingsTable);
+
+document.getElementById('syncAllBtn').addEventListener('click', async () => {
+  const statusEl = document.getElementById('syncAllStatus');
+  const btn = document.getElementById('syncAllBtn');
+  btn.disabled = true;
+  statusEl.textContent = 'Syncing…';
+  try {
+    const { results, checkoutsScheduled } = await api('/api/bookings/sync-all', { method: 'POST' });
+    const checkoutNote = checkoutsScheduled ? ` Scheduled ${checkoutsScheduled} new turnover-cleaning appointment(s) for upcoming checkouts.` : '';
+    if (results.length === 0) {
+      statusEl.textContent = 'No properties have an iCal link set yet.' + checkoutNote;
+    } else {
+      const okCount = results.filter((r) => r.ok).length;
+      const failed = results.filter((r) => !r.ok);
+      statusEl.textContent = `Synced ${okCount}/${results.length} propert${results.length === 1 ? 'y' : 'ies'}.` +
+        (failed.length ? ` Failed: ${failed.map((f) => f.customerName).join(', ')}.` : '') + checkoutNote;
+    }
+    loadBookings();
+    loadAppointments();
+  } catch (e) {
+    statusEl.textContent = `Sync failed: ${e.message}`;
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+window.deleteBooking = async (id) => {
+  if (!confirm('Remove this booking date range?')) return;
+  try {
+    await api('/api/bookings/' + id, { method: 'DELETE' });
+    loadBookings();
+  } catch (e) {
+    alert('Could not delete booking: ' + e.message);
+  }
+};
+
+// ---------- Service Requests (from owner portal) ----------
+async function loadRequests() {
+  const status = document.getElementById('requestStatusFilter').value;
+  const url = status ? '/api/service-requests?status=' + status : '/api/service-requests';
+  const requests = await api(url);
+  const tbody = document.querySelector('#requestsTable tbody');
+  tbody.innerHTML = requests.map((r) => `
+    <tr>
+      <td>${r.customerName}</td>
+      <td>${r.requestedDate}</td>
+      <td>${r.notes || ''}</td>
+      <td><span class="badge ${r.status === 'pending' ? 'draft' : r.status === 'scheduled' ? 'completed' : 'cancelled'}">${r.status}</span></td>
+      <td>
+        ${r.status === 'pending' ? `
+          <button class="btn small primary" onclick="scheduleRequest(${r.id}, ${r.customerId}, '${r.requestedDate}')">Schedule</button>
+          <button class="btn small danger" onclick="declineRequest(${r.id})">Decline</button>
+        ` : ''}
+      </td>
+    </tr>
+  `).join('') || '<tr><td colspan="5" class="empty-state">No requests found.</td></tr>';
+}
+
+document.getElementById('requestStatusFilter').addEventListener('change', loadRequests);
+
+window.declineRequest = async (id) => {
+  try {
+    await api('/api/service-requests/' + id, { method: 'PUT', body: JSON.stringify({ status: 'declined' }) });
+    loadRequests();
+  } catch (e) {
+    alert('Could not decline request: ' + e.message);
+  }
+};
+
+window.scheduleRequest = async (requestId, customerId, requestedDate) => {
+  if (state.customers.length === 0) state.customers = await api('/api/customers');
+  if (state.technicians.length === 0) state.technicians = await api('/api/technicians');
+  if (state.services.length === 0) state.services = await api('/api/services');
+  openModal('New Appointment', apptForm({ customerId, date: requestedDate }));
+  onApptCustomerChange();
+  document.getElementById('saveApptBtn').addEventListener('click', async () => {
+    try {
+      await api('/api/appointments', { method: 'POST', body: JSON.stringify(readApptForm()) });
+      await api('/api/service-requests/' + requestId, { method: 'PUT', body: JSON.stringify({ status: 'scheduled' }) });
+      closeModal();
+      loadRequests();
+    } catch (e) {
+      alert('Could not schedule this request: ' + e.message);
+    }
+  });
+};
+
+// ---------- Reports ----------
+function monthKey(dateStr) {
+  return (dateStr || '').slice(0, 7); // "YYYY-MM"
+}
+function monthLabel(key) {
+  const [y, m] = key.split('-');
+  return new Date(Number(y), Number(m) - 1, 1).toLocaleDateString(undefined, { month: 'short', year: 'numeric' });
+}
+function lastNMonthKeys(n) {
+  const keys = [];
+  const d = new Date();
+  d.setDate(1);
+  for (let i = n - 1; i >= 0; i -= 1) {
+    const m = new Date(d.getFullYear(), d.getMonth() - i, 1);
+    keys.push(`${m.getFullYear()}-${String(m.getMonth() + 1).padStart(2, '0')}`);
+  }
+  return keys;
+}
+function renderBars(containerId, entries, formatValue) {
+  const max = Math.max(1, ...entries.map((e) => e.value));
+  document.getElementById(containerId).innerHTML = entries.map((e) => `
+    <div class="bar-row">
+      <div class="bar-label">${e.label}</div>
+      <div class="bar-track"><div class="bar-fill" style="width:${Math.round((e.value / max) * 100)}%"></div></div>
+      <div class="bar-value">${formatValue ? formatValue(e.value) : e.value}</div>
+    </div>
+  `).join('') || '<div class="empty-state">Not enough data yet.</div>';
+}
+
+async function loadReports() {
+  const [appointments, invoices, technicians] = await Promise.all([
+    api('/api/appointments'),
+    api('/api/invoices'),
+    api('/api/technicians'),
+  ]);
+
+  const completed = appointments.filter((a) => a.status === 'completed');
+  const paidInvoices = invoices.filter((i) => i.status === 'paid');
+  const totalRevenue = paidInvoices.reduce((sum, i) => sum + Number(i.amount || 0), 0);
+
+  const techCounts = {};
+  completed.forEach((a) => {
+    const name = a.technicianName || 'Unassigned';
+    techCounts[name] = (techCounts[name] || 0) + 1;
+  });
+  const busiestTech = Object.entries(techCounts).sort((a, b) => b[1] - a[1])[0];
+
+  document.getElementById('reportStats').innerHTML = `
+    <div class="stat-card">
+      <div class="stat-label">Jobs completed (all time)</div>
+      <div class="stat-value">${completed.length}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Total revenue (paid)</div>
+      <div class="stat-value">${money(totalRevenue)}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Busiest technician</div>
+      <div class="stat-value" style="font-size:16px;">${busiestTech ? `${busiestTech[0]} (${busiestTech[1]})` : '—'}</div>
+    </div>
+  `;
+
+  const months = lastNMonthKeys(6);
+
+  const revenueByMonth = {};
+  paidInvoices.forEach((i) => {
+    const key = monthKey(i.issuedDate);
+    revenueByMonth[key] = (revenueByMonth[key] || 0) + Number(i.amount || 0);
+  });
+  renderBars('reportRevenueBars', months.map((m) => ({ label: monthLabel(m), value: revenueByMonth[m] || 0 })), money);
+
+  const jobsByMonth = {};
+  completed.forEach((a) => {
+    const key = monthKey(a.date);
+    jobsByMonth[key] = (jobsByMonth[key] || 0) + 1;
+  });
+  renderBars('reportJobsBars', months.map((m) => ({ label: monthLabel(m), value: jobsByMonth[m] || 0 })));
+
+  const techEntries = technicians
+    .map((t) => ({ label: t.name, value: techCounts[t.name] || 0 }))
+    .filter((e) => e.value > 0)
+    .sort((a, b) => b.value - a.value);
+  renderBars('reportTechBars', techEntries);
+}
+
+// ---------- Settings (route optimization depot + geocoding) ----------
+async function loadSettingsTab() {
+  const settings = await api('/api/settings');
+  document.getElementById('googleReviewUrlInput').value = settings.googleReviewUrl || '';
+  document.getElementById('depotAddressInput').value = settings.depotAddress || '';
+  document.getElementById('depotStatus').textContent =
+    typeof settings.depotLat === 'number'
+      ? `Located ✓ (${settings.depotLat.toFixed(4)}, ${settings.depotLng.toFixed(4)})`
+      : 'Not located yet — click "Save & locate."';
+  document.getElementById('geocodeStatus').textContent = '';
+  loadAdminAccounts();
+  loadServicesList();
+}
+
+async function loadServicesList() {
+  state.services = await api('/api/services');
+  const list = document.getElementById('servicesList');
+  list.innerHTML = state.services.map((s) => `
+    <div class="owner-list-item">
+      <span>${s.name} — ${money(s.defaultPrice)}</span>
+      <button class="btn small danger" onclick="deleteService(${s.id})">Delete</button>
+    </div>
+  `).join('') || '<div class="portal-sub" style="margin:0;">No services yet.</div>';
+}
+
+document.getElementById('addServiceBtn').addEventListener('click', async () => {
+  const errEl = document.getElementById('servicesError');
+  errEl.classList.add('hidden');
+  const name = document.getElementById('newServiceName').value;
+  const defaultPrice = document.getElementById('newServicePrice').value;
+  try {
+    await api('/api/services', { method: 'POST', body: JSON.stringify({ name, defaultPrice }) });
+    document.getElementById('newServiceName').value = '';
+    document.getElementById('newServicePrice').value = '';
+    loadServicesList();
+  } catch (e) {
+    errEl.textContent = e.message;
+    errEl.classList.remove('hidden');
+  }
+});
+
+window.deleteService = async (id) => {
+  if (!confirm('Delete this service from the catalog? Appointments already using it are unaffected.')) return;
+  await api('/api/services/' + id, { method: 'DELETE' });
+  loadServicesList();
+};
+
+async function loadAdminAccounts() {
+  const accounts = await api('/api/admin-auth/accounts');
+  const list = document.getElementById('adminAccountsList');
+  list.innerHTML = accounts.map((a) => `
+    <div class="owner-list-item">
+      <span>${a.name || a.username} ${a.name ? `<span style="color:#7a8f97;">(${a.username})</span>` : ''}</span>
+      ${accounts.length > 1 ? `<button class="btn small danger" onclick="deleteAdminAccount(${a.id})">Delete</button>` : ''}
+    </div>
+  `).join('');
+}
+
+document.getElementById('addAdminBtn').addEventListener('click', async () => {
+  const errEl = document.getElementById('adminAccountsError');
+  errEl.classList.add('hidden');
+  const name = document.getElementById('newAdminName').value;
+  const username = document.getElementById('newAdminUsername').value;
+  const password = document.getElementById('newAdminPassword').value;
+  try {
+    await api('/api/admin-auth/accounts', { method: 'POST', body: JSON.stringify({ name, username, password }) });
+    document.getElementById('newAdminName').value = '';
+    document.getElementById('newAdminUsername').value = '';
+    document.getElementById('newAdminPassword').value = '';
+    loadAdminAccounts();
+  } catch (e) {
+    errEl.textContent = e.message;
+    errEl.classList.remove('hidden');
+  }
+});
+
+window.deleteAdminAccount = async (id) => {
+  if (!confirm('Delete this admin account? They will no longer be able to log in.')) return;
+  await api('/api/admin-auth/accounts/' + id, { method: 'DELETE' });
+  loadAdminAccounts();
+};
+
+document.getElementById('restoreCustomersBtn').addEventListener('click', async () => {
+  if (!confirm('Restore the customer list from the built-in backup? This only adds customers if the list is currently empty — it will not touch or duplicate anything if customers already exist.')) return;
+  const btn = document.getElementById('restoreCustomersBtn');
+  btn.disabled = true;
+  try {
+    const result = await api('/api/customers/restore-seed-backup', { method: 'POST' });
+    if (result.restored) {
+      alert(`Restored ${result.count} customers from backup.`);
+      loadCustomers();
+    } else {
+      alert(`No action taken — ${result.count} customer(s) already exist.`);
+    }
+  } catch (e) {
+    alert('Could not restore: ' + e.message);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+function openBulkContactModal() {
+  const html = `
+    <p class="portal-sub" style="margin:0 0 4px;">
+      One line per customer: <code>Name: value, value</code> — each value can be a phone
+      number or an email, in any order. Only blank fields get filled in; anything
+      already on file is left alone.
+    </p>
+    <textarea id="bulkContactText" rows="14" style="width:100%; font-family:monospace; font-size:12px;" placeholder="Chelsea: 503-555-1234, chelsea@example.com"></textarea>
+    <div id="bulkContactResult"></div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal()">Close</button>
+      <button class="btn primary" id="bulkContactRunBtn">Update</button>
+    </div>
+  `;
+  openModal('Update customer contact info', html, true);
+  document.getElementById('bulkContactRunBtn').addEventListener('click', async () => {
+    const btn = document.getElementById('bulkContactRunBtn');
+    const resultEl = document.getElementById('bulkContactResult');
+    const text = document.getElementById('bulkContactText').value;
+    btn.disabled = true;
+    btn.textContent = 'Updating…';
+    try {
+      const result = await api('/api/customers/bulk-update-contact', { method: 'POST', body: JSON.stringify({ text }) });
+      let html2 = `<div class="portal-hint" style="margin:10px 0;">Updated ${result.updatedCount} customer(s).${result.unchangedCount ? ` ${result.unchangedCount} already had that info on file.` : ''}${result.unmatchedCount ? ` ${result.unmatchedCount} name(s) couldn't be matched.` : ''}</div>`;
+      if (result.unmatched.length) {
+        html2 += `<div style="max-height:180px; overflow-y:auto; font-size:12px; background:#fef6f5; border-radius:6px; padding:8px;">
+          ${result.unmatched.map((u) => `"${u.name}"`).join('<br>')}
+        </div>`;
+      }
+      if (result.skippedLines && result.skippedLines.length) {
+        html2 += `<div class="portal-hint" style="margin:8px 0 0;">${result.skippedLines.length} line(s) didn't match the expected format and were skipped.</div>`;
+      }
+      resultEl.innerHTML = html2;
+      loadCustomers();
+    } catch (e) {
+      resultEl.innerHTML = `<div class="portal-error">${e.message}</div>`;
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Update';
+    }
+  });
+}
+document.getElementById('bulkContactBtn').addEventListener('click', openBulkContactModal);
+
+document.getElementById('dedupeAppointmentsBtn').addEventListener('click', async () => {
+  if (!confirm('Remove duplicate appointments (same property, same day)? The first one created is kept; extras are deleted.')) return;
+  const btn = document.getElementById('dedupeAppointmentsBtn');
+  btn.disabled = true;
+  try {
+    const result = await api('/api/appointments/dedupe', { method: 'POST' });
+    alert(result.removed > 0 ? `Removed ${result.removed} duplicate appointment(s).` : 'No duplicates found.');
+    loadAppointments();
+  } catch (e) {
+    alert('Could not clean up: ' + e.message);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+document.getElementById('saveReviewUrlBtn').addEventListener('click', async () => {
+  const statusEl = document.getElementById('reviewUrlStatus');
+  const btn = document.getElementById('saveReviewUrlBtn');
+  const googleReviewUrl = document.getElementById('googleReviewUrlInput').value.trim();
+  btn.disabled = true;
+  try {
+    await api('/api/settings', { method: 'PUT', body: JSON.stringify({ googleReviewUrl }) });
+    statusEl.textContent = 'Saved ✓';
+  } catch (e) {
+    statusEl.textContent = `Could not save: ${e.message}`;
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+document.getElementById('saveDepotBtn').addEventListener('click', async () => {
+  const statusEl = document.getElementById('depotStatus');
+  const btn = document.getElementById('saveDepotBtn');
+  const depotAddress = document.getElementById('depotAddressInput').value.trim();
+  btn.disabled = true;
+  statusEl.textContent = 'Saving and locating…';
+  try {
+    await api('/api/settings', { method: 'PUT', body: JSON.stringify({ depotAddress }) });
+    const result = await api('/api/settings/geocode-depot', { method: 'POST' });
+    statusEl.textContent = `Located ✓ (${result.depotLat.toFixed(4)}, ${result.depotLng.toFixed(4)})`;
+  } catch (e) {
+    statusEl.textContent = `Couldn't locate that address: ${e.message}`;
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+document.getElementById('geocodeAllBtn').addEventListener('click', async () => {
+  const statusEl = document.getElementById('geocodeStatus');
+  const btn = document.getElementById('geocodeAllBtn');
+  btn.disabled = true;
+  const customers = await api('/api/customers');
+  const todo = customers.filter((c) => c.address && typeof c.lat !== 'number');
+  if (todo.length === 0) {
+    statusEl.textContent = 'Every property with an address is already located.';
+    btn.disabled = false;
+    return;
+  }
+  let done = 0;
+  let failed = 0;
+  for (const c of todo) {
+    statusEl.textContent = `Locating ${done + failed + 1}/${todo.length}: ${c.name}…`;
+    try {
+      await api(`/api/customers/${c.id}/geocode`, { method: 'POST' });
+      done += 1;
+    } catch (e) {
+      failed += 1;
+    }
+    // Nominatim's usage policy caps requests at 1/second — pace ourselves
+    await new Promise((r) => setTimeout(r, 1100));
+  }
+  statusEl.textContent = `Done — located ${done}/${todo.length}${failed ? `, ${failed} failed (couldn't find that address)` : ''}.`;
+  btn.disabled = false;
+});
+
+// ---------- Admin login / first-time setup gate ----------
+const adminAuthView = document.getElementById('adminAuthView');
+const adminSetupView = document.getElementById('adminSetupView');
+const adminLoginView = document.getElementById('adminLoginView');
+const appRoot = document.getElementById('appRoot');
+
+function showAdminApp() {
+  adminAuthView.classList.add('hidden');
+  appRoot.classList.remove('hidden');
+  loadDashboard();
+}
+
+async function checkAdminSession() {
+  try {
+    await api('/api/admin-auth/me');
+    showAdminApp();
+  } catch (e) {
+    appRoot.classList.add('hidden');
+    adminAuthView.classList.remove('hidden');
+    const { hasAdmin } = await api('/api/admin-auth/status');
+    if (hasAdmin) {
+      adminLoginView.classList.remove('hidden');
+      adminSetupView.classList.add('hidden');
+    } else {
+      adminSetupView.classList.remove('hidden');
+      adminLoginView.classList.add('hidden');
+    }
+  }
+}
+
+document.getElementById('adminSetupBtn').addEventListener('click', async () => {
+  const errEl = document.getElementById('adminSetupError');
+  errEl.classList.add('hidden');
+  const name = document.getElementById('adminSetupName').value;
+  const username = document.getElementById('adminSetupUsername').value;
+  const password = document.getElementById('adminSetupPassword').value;
+  try {
+    await api('/api/admin-auth/setup', { method: 'POST', body: JSON.stringify({ name, username, password }) });
+    showAdminApp();
+  } catch (e) {
+    errEl.textContent = e.message;
+    errEl.classList.remove('hidden');
+  }
+});
+
+document.getElementById('adminLoginBtn').addEventListener('click', async () => {
+  const errEl = document.getElementById('adminLoginError');
+  errEl.classList.add('hidden');
+  const username = document.getElementById('adminLoginUsername').value;
+  const password = document.getElementById('adminLoginPassword').value;
+  try {
+    await api('/api/admin-auth/login', { method: 'POST', body: JSON.stringify({ username, password }) });
+    showAdminApp();
+  } catch (e) {
+    errEl.textContent = e.message;
+    errEl.classList.remove('hidden');
+  }
+});
+
+document.getElementById('adminLoginPassword').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') document.getElementById('adminLoginBtn').click();
+});
+
+document.getElementById('adminLogoutBtn').addEventListener('click', async () => {
+  await api('/api/admin-auth/logout', { method: 'POST' });
+  checkAdminSession();
+});
+
+// ---------- Init ----------
+checkAdminSession();
