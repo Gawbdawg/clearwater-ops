@@ -17,11 +17,13 @@ const bookingsRouter = require('./routes/bookings');
 const serviceRequestsRouter = require('./routes/serviceRequests');
 const settingsRouter = require('./routes/settings');
 const servicesRouter = require('./routes/services');
+const addonsRouter = require('./routes/addons');
 const exportRouter = require('./routes/export');
 const adminAuthRouter = require('./routes/adminAuth');
 const payRouter = require('./routes/pay');
 const stripeWebhookHandler = require('./routes/stripeWebhook');
 const { requireAdminAuth } = require('./lib/auth');
+const { startAutoCalendarSync } = require('./lib/autoSync');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -63,6 +65,7 @@ app.use('/api/bookings', requireAdminAuth, bookingsRouter);
 app.use('/api/service-requests', requireAdminAuth, serviceRequestsRouter);
 app.use('/api/settings', requireAdminAuth, settingsRouter);
 app.use('/api/services', requireAdminAuth, servicesRouter);
+app.use('/api/addons', requireAdminAuth, addonsRouter);
 app.use('/api/export', requireAdminAuth, exportRouter);
 
 // Technician portal
@@ -83,4 +86,8 @@ app.get('/healthz', (req, res) => res.json({ ok: true }));
 
 app.listen(PORT, () => {
   console.log(`Clear Water Spa Service running at http://localhost:${PORT}`);
+  // Keep vacation-rental booking calendars fresh without anyone having to remember to
+  // click "Sync now" — see lib/autoSync.js for details/caveats (only runs while the
+  // app itself is awake).
+  startAutoCalendarSync();
 });

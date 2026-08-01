@@ -33,6 +33,15 @@
 .job-photo-label { font-size: 11px; color: #5a7078; text-transform: capitalize; margin-top: 2px; }
 .job-photo .btn { margin-top: 2px; padding: 2px 6px; font-size: 11px; }
 
+.job-addons { margin-top: 10px; }
+.job-addon-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.addon-chip {
+  border: 1px solid #cfe0e5; background: #f4f9fa; color: #0b5f7a; border-radius: 999px;
+  padding: 5px 12px; font-size: 12px; font-weight: 600; cursor: pointer;
+}
+.addon-chip:hover { background: #e8f2f4; }
+.addon-chip.added { background: #0b5f7a; color: #fff; border-color: #0b5f7a; }
+
 .calendar-form-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 16px; }
 .calendar-form-row label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: #46606b; }
 .owner-list-item {

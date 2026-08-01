@@ -29,11 +29,18 @@ async function checkSession() {
   }
 }
 
+let addonsCatalog = [];
+
 async function showJobs(tech) {
   loginView.classList.add('hidden');
   jobsView.classList.remove('hidden');
   logoutBtn.style.display = '';
   document.getElementById('welcomeMsg').textContent = `Hi ${tech.name}`;
+  try {
+    addonsCatalog = await api('/api/tech/addons');
+  } catch (e) {
+    addonsCatalog = [];
+  }
   await loadJobs();
 }
 
@@ -63,6 +70,7 @@ async function loadJobs() {
         <span class="badge ${j.status}">${j.status}</span>
       </div>
       ${renderPhotos(j)}
+      ${renderAddons(j)}
       <div class="job-actions">
         <button class="btn small" onclick="choosePhoto(${j.id}, 'before')">Add before photo</button>
         <button class="btn small" onclick="choosePhoto(${j.id}, 'after')">Add after photo</button>
@@ -72,6 +80,38 @@ async function loadJobs() {
     </div>
   `).join('');
 }
+
+function renderAddons(j) {
+  if (addonsCatalog.length === 0) return '';
+  const attached = j.addons || [];
+  const attachedIds = attached.map((a) => a.id);
+  const total = attached.reduce((sum, a) => sum + (Number(a.price) || 0), 0);
+  return `
+    <div class="job-addons">
+      <div class="job-meta" style="margin-bottom:4px;">Upcharges${total ? ` — +$${total.toFixed(2)} added` : ''}</div>
+      <div class="job-addon-chips">
+        ${addonsCatalog.map((a) => `
+          <button class="addon-chip ${attachedIds.includes(a.id) ? 'added' : ''}" onclick="toggleAddon(${j.id}, ${a.id}, ${attachedIds.includes(a.id)})">
+            ${attachedIds.includes(a.id) ? '✓ ' : '+ '}${a.name} $${Number(a.price).toFixed(2)}
+          </button>
+        `).join('')}
+      </div>
+    </div>
+  `;
+}
+
+window.toggleAddon = async (apptId, addonId, currentlyAttached) => {
+  try {
+    if (currentlyAttached) {
+      await api(`/api/tech/appointments/${apptId}/addons/${addonId}`, { method: 'DELETE' });
+    } else {
+      await api(`/api/tech/appointments/${apptId}/addons`, { method: 'POST', body: JSON.stringify({ addonId }) });
+    }
+    await loadJobs();
+  } catch (e) {
+    alert(e.message || 'Could not update upcharge');
+  }
+};
 
 function renderEquipmentMeta(eq) {
   if (!eq || (!eq.brand && !eq.model && !eq.filterType)) return '';

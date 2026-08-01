@@ -1,4 +1,4 @@
-const state = { customers: [], owners: [], technicians: [], appointments: [], invoices: [], services: [] };
+const state = { customers: [], owners: [], technicians: [], appointments: [], invoices: [], services: [], addons: [] };
 
 function todayStr() {
   return new Date().toISOString().slice(0, 10);
@@ -1542,6 +1542,20 @@ async function loadSettingsTab() {
   document.getElementById('geocodeStatus').textContent = '';
   loadAdminAccounts();
   loadServicesList();
+  loadAddonsList();
+}
+
+let editingServiceId = null;
+
+function serviceFreqSummary(s) {
+  if (s.pricingMode !== 'frequency') return money(s.defaultPrice);
+  const fp = s.frequencyPrices || {};
+  const parts = [];
+  if (fp.weekly !== undefined) parts.push(`Weekly ${money(fp.weekly)}`);
+  if (fp.biweekly !== undefined) parts.push(`Biweekly ${money(fp.biweekly)}`);
+  if (fp.every4weeks !== undefined) parts.push(`Monthly ${money(fp.every4weeks)}`);
+  if (fp.vacationFlat !== undefined) parts.push(`Vacation ${money(fp.vacationFlat)} flat`);
+  return parts.length ? parts.join(' · ') : 'No rates set yet';
 }
 
 async function loadServicesList() {
@@ -1549,21 +1563,80 @@ async function loadServicesList() {
   const list = document.getElementById('servicesList');
   list.innerHTML = state.services.map((s) => `
     <div class="owner-list-item">
-      <span>${s.name} — ${money(s.defaultPrice)}</span>
-      <button class="btn small danger" onclick="deleteService(${s.id})">Delete</button>
+      <span>${s.name} — <span style="color:var(--text-faint);">${serviceFreqSummary(s)}</span></span>
+      <span style="display:flex; gap:6px;">
+        <button class="btn small" onclick="editService(${s.id})">Edit</button>
+        <button class="btn small danger" onclick="deleteService(${s.id})">Delete</button>
+      </span>
     </div>
   `).join('') || '<div class="portal-sub" style="margin:0;">No services yet.</div>';
 }
+
+window.onServicePricingModeChange = () => {
+  const isFrequency = document.getElementById('newServicePricingMode').value === 'frequency';
+  document.getElementById('flatPriceWrap').classList.toggle('hidden', isFrequency);
+  document.getElementById('frequencyPriceWrap').classList.toggle('hidden', !isFrequency);
+};
+
+function resetServiceForm() {
+  editingServiceId = null;
+  document.getElementById('newServiceName').value = '';
+  document.getElementById('newServicePrice').value = '';
+  document.getElementById('newServicePriceWeekly').value = '';
+  document.getElementById('newServicePriceBiweekly').value = '';
+  document.getElementById('newServicePriceMonthly').value = '';
+  document.getElementById('newServicePriceVacation').value = '';
+  document.getElementById('newServicePricingMode').value = 'flat';
+  onServicePricingModeChange();
+  document.getElementById('serviceFormLabel').style.display = 'none';
+  document.getElementById('cancelServiceEditBtn').style.display = 'none';
+  document.getElementById('addServiceBtn').textContent = '+ Add service';
+}
+
+window.editService = (id) => {
+  const s = state.services.find((x) => x.id === id);
+  if (!s) return;
+  editingServiceId = id;
+  document.getElementById('newServiceName').value = s.name;
+  document.getElementById('newServicePrice').value = s.defaultPrice || '';
+  const fp = s.frequencyPrices || {};
+  document.getElementById('newServicePriceWeekly').value = fp.weekly !== undefined ? fp.weekly : '';
+  document.getElementById('newServicePriceBiweekly').value = fp.biweekly !== undefined ? fp.biweekly : '';
+  document.getElementById('newServicePriceMonthly').value = fp.every4weeks !== undefined ? fp.every4weeks : '';
+  document.getElementById('newServicePriceVacation').value = fp.vacationFlat !== undefined ? fp.vacationFlat : '';
+  document.getElementById('newServicePricingMode').value = s.pricingMode === 'frequency' ? 'frequency' : 'flat';
+  onServicePricingModeChange();
+  document.getElementById('serviceFormLabel').style.display = 'block';
+  document.getElementById('cancelServiceEditBtn').style.display = 'inline-block';
+  document.getElementById('addServiceBtn').textContent = 'Save changes';
+  document.getElementById('newServiceName').scrollIntoView({ behavior: 'smooth', block: 'center' });
+};
+
+document.getElementById('cancelServiceEditBtn').addEventListener('click', resetServiceForm);
 
 document.getElementById('addServiceBtn').addEventListener('click', async () => {
   const errEl = document.getElementById('servicesError');
   errEl.classList.add('hidden');
   const name = document.getElementById('newServiceName').value;
-  const defaultPrice = document.getElementById('newServicePrice').value;
+  const pricingMode = document.getElementById('newServicePricingMode').value;
+  const payload = {
+    name,
+    pricingMode,
+    defaultPrice: document.getElementById('newServicePrice').value,
+    frequencyPrices: {
+      weekly: document.getElementById('newServicePriceWeekly').value,
+      biweekly: document.getElementById('newServicePriceBiweekly').value,
+      every4weeks: document.getElementById('newServicePriceMonthly').value,
+      vacationFlat: document.getElementById('newServicePriceVacation').value,
+    },
+  };
   try {
-    await api('/api/services', { method: 'POST', body: JSON.stringify({ name, defaultPrice }) });
-    document.getElementById('newServiceName').value = '';
-    document.getElementById('newServicePrice').value = '';
+    if (editingServiceId) {
+      await api('/api/services/' + editingServiceId, { method: 'PUT', body: JSON.stringify(payload) });
+    } else {
+      await api('/api/services', { method: 'POST', body: JSON.stringify(payload) });
+    }
+    resetServiceForm();
     loadServicesList();
   } catch (e) {
     errEl.textContent = e.message;
@@ -1573,8 +1646,47 @@ document.getElementById('addServiceBtn').addEventListener('click', async () => {
 
 window.deleteService = async (id) => {
   if (!confirm('Delete this service from the catalog? Appointments already using it are unaffected.')) return;
+  if (editingServiceId === id) resetServiceForm();
   await api('/api/services/' + id, { method: 'DELETE' });
   loadServicesList();
+};
+
+// ---- Upcharges / add-ons catalog ----
+async function loadAddonsList() {
+  state.addons = await api('/api/addons');
+  const list = document.getElementById('addonsList');
+  list.innerHTML = state.addons.map((a) => `
+    <div class="owner-list-item">
+      <span>${a.name} — ${money(a.price)}</span>
+      <button class="btn small danger" onclick="deleteAddon(${a.id})">Delete</button>
+    </div>
+  `).join('') || '<div class="portal-sub" style="margin:0;">No upcharges yet.</div>';
+}
+
+document.getElementById('addAddonBtn').addEventListener('click', async () => {
+  const errEl = document.getElementById('addonsError');
+  errEl.classList.add('hidden');
+  const name = document.getElementById('newAddonName').value;
+  const price = document.getElementById('newAddonPrice').value;
+  try {
+    await api('/api/addons', { method: 'POST', body: JSON.stringify({ name, price }) });
+    document.getElementById('newAddonName').value = '';
+    document.getElementById('newAddonPrice').value = '';
+    loadAddonsList();
+  } catch (e) {
+    errEl.textContent = e.message;
+    errEl.classList.remove('hidden');
+  }
+});
+
+window.deleteAddon = async (id) => {
+  if (!confirm('Delete this upcharge from the catalog? Jobs that already have it attached are unaffected.')) return;
+  try {
+    await api('/api/addons/' + id, { method: 'DELETE' });
+    loadAddonsList();
+  } catch (e) {
+    alert(e.message);
+  }
 };
 
 async function loadAdminAccounts() {

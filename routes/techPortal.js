@@ -8,6 +8,12 @@ const router = express.Router();
 
 router.use(requireTechAuth);
 
+// Read-only catalog of upcharges a tech can attach to a job (e.g. grill cleaning,
+// window spray) — managed by the admin in Settings, see routes/addons.js.
+router.get('/addons', (req, res) => {
+  res.json(store.getAll('addons').sort((a, b) => a.name.localeCompare(b.name)));
+});
+
 // Only this technician's appointments — today and upcoming by default, or a specific date via ?date=
 // Each day's stops are ordered into an efficient route from the shop when we have
 // coordinates for them; days are still shown in date order.
@@ -70,6 +76,35 @@ router.put('/appointments/:id/status', (req, res) => {
   }
   const updated = store.update('appointments', req.params.id, { status });
   maybeCreateInvoiceForCompletedAppointment(updated);
+  res.json(updated);
+});
+
+// Attach one upcharge/add-on to one of this technician's own jobs (e.g. tapping
+// "+ Grill cleaning $10" while on site). Stores a price snapshot at add time so a later
+// catalog price change never retroactively changes an already-billed job. A no-op if
+// that add-on is already attached — tapping it twice doesn't double-charge.
+router.post('/appointments/:id/addons', (req, res) => {
+  const appt = store.getById('appointments', req.params.id);
+  if (!appt || appt.technicianId !== req.session.technicianId) {
+    return res.status(404).json({ error: 'Appointment not found' });
+  }
+  const addon = store.getById('addons', req.body.addonId);
+  if (!addon) return res.status(404).json({ error: 'Add-on not found' });
+  const existing = appt.addons || [];
+  if (existing.some((a) => a.id === addon.id)) return res.json(appt);
+  const addons = [...existing, { id: addon.id, name: addon.name, price: addon.price }];
+  const updated = store.update('appointments', req.params.id, { addons });
+  res.json(updated);
+});
+
+// Remove an upcharge that was added by mistake.
+router.delete('/appointments/:id/addons/:addonId', (req, res) => {
+  const appt = store.getById('appointments', req.params.id);
+  if (!appt || appt.technicianId !== req.session.technicianId) {
+    return res.status(404).json({ error: 'Appointment not found' });
+  }
+  const addons = (appt.addons || []).filter((a) => String(a.id) !== req.params.addonId);
+  const updated = store.update('appointments', req.params.id, { addons });
   res.json(updated);
 });
 
