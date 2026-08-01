@@ -1787,6 +1787,59 @@ function openBulkContactModal() {
 }
 document.getElementById('bulkContactBtn').addEventListener('click', openBulkContactModal);
 
+function openBulkLinkOwnersModal() {
+  const html = `
+    <p class="portal-sub" style="margin:0 0 4px;">
+      One line per property/customer: <code>CustomerName: OwnerName, Phone</code> — creates
+      the owner account if it doesn't exist yet (no password set, so nobody can log in
+      until you add one), and links the customer to it. If the same owner name appears on
+      more than one line, all those properties get linked to the same one account. Never
+      changes a customer that's already linked to a different owner.
+    </p>
+    <textarea id="bulkLinkOwnersText" rows="14" style="width:100%; font-family:monospace; font-size:12px;" placeholder="Sea Salt Forest: Sam, (503) 481-1333"></textarea>
+    <div id="bulkLinkOwnersResult"></div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal()">Close</button>
+      <button class="btn primary" id="bulkLinkOwnersRunBtn">Link owners</button>
+    </div>
+  `;
+  openModal('Bulk create/link owners', html, true);
+  document.getElementById('bulkLinkOwnersRunBtn').addEventListener('click', async () => {
+    const btn = document.getElementById('bulkLinkOwnersRunBtn');
+    const resultEl = document.getElementById('bulkLinkOwnersResult');
+    const text = document.getElementById('bulkLinkOwnersText').value;
+    btn.disabled = true;
+    btn.textContent = 'Linking…';
+    try {
+      const result = await api('/api/owners/bulk-link-from-text', { method: 'POST', body: JSON.stringify({ text }) });
+      let html2 = `<div class="portal-hint" style="margin:10px 0;">Linked ${result.linkedCount} customer(s) (${result.ownersCreated} new owner account(s) created).${result.alreadyLinked.length ? ` ${result.alreadyLinked.length} already linked.` : ''}</div>`;
+      if (result.linked.length) {
+        html2 += `<div style="max-height:140px; overflow-y:auto; font-size:12px; background:#f4f9fa; border-radius:6px; padding:8px; margin-bottom:8px;">${result.linked.join('<br>')}</div>`;
+      }
+      if (result.conflicts.length) {
+        html2 += `<div class="portal-hint" style="margin:0 0 4px; font-weight:600;">Conflicts (left unchanged):</div>
+          <div style="max-height:140px; overflow-y:auto; font-size:12px; background:#fef6f5; border-radius:6px; padding:8px; margin-bottom:8px;">${result.conflicts.join('<br>')}</div>`;
+      }
+      if (result.unmatchedCustomers.length) {
+        html2 += `<div class="portal-hint" style="margin:0 0 4px; font-weight:600;">Couldn't match these customer/property names:</div>
+          <div style="max-height:140px; overflow-y:auto; font-size:12px; background:#fef6f5; border-radius:6px; padding:8px;">${result.unmatchedCustomers.map((u) => `"${u}"`).join('<br>')}</div>`;
+      }
+      if (result.skippedLines.length) {
+        html2 += `<div class="portal-hint" style="margin:8px 0 0;">${result.skippedLines.length} line(s) didn't match the expected format and were skipped.</div>`;
+      }
+      resultEl.innerHTML = html2;
+      loadOwners();
+      loadCustomers();
+    } catch (e) {
+      resultEl.innerHTML = `<div class="portal-error">${e.message}</div>`;
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Link owners';
+    }
+  });
+}
+document.getElementById('bulkLinkOwnersBtn').addEventListener('click', openBulkLinkOwnersModal);
+
 document.getElementById('dedupeAppointmentsBtn').addEventListener('click', async () => {
   if (!confirm('Remove duplicate appointments (same property, same day)? The first one created is kept; extras are deleted.')) return;
   const btn = document.getElementById('dedupeAppointmentsBtn');

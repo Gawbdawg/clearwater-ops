@@ -2,6 +2,7 @@ const express = require('express');
 const store = require('../lib/store');
 const { hashPassword, sanitizeOwner } = require('../lib/auth');
 const { generateMonthlyInvoiceForOwner } = require('../lib/monthlyInvoice');
+const { makeCustomerMatcher } = require('../lib/customerMatch');
 const router = express.Router();
 
 function withPropertyCount(owner) {
@@ -141,6 +142,89 @@ router.post('/bulk-create-from-customers', (req, res) => {
     ownersCreated,
     customersLinked,
     alreadyLinked: customers.length - unlinked.length,
+  });
+});
+
+// Bulk-links owners to customers/properties from pasted text — one line per pairing in
+// the form "CustomerName: OwnerName, Phone". The customer/property side is matched the
+// same conservative way as the other bulk-paste tools (bulk appointment import, bulk
+// contact-info update) — anything ambiguous is skipped and reported back rather than
+// guessed at. The owner side is matched by exact name (case-insensitive) so the same
+// owner mentioned on multiple lines (e.g. one person who owns two properties) only gets
+// created once and both properties get linked to it. Never overwrites a customer that's
+// already linked to a DIFFERENT owner — that's reported back as a conflict instead of
+// silently changed.
+router.post('/bulk-link-from-text', (req, res) => {
+  const { text } = req.body;
+  if (!text || !text.trim()) return res.status(400).json({ error: 'No text provided' });
+
+  const customers = store.getAll('customers');
+  const findCustomer = makeCustomerMatcher(customers);
+  let owners = store.getAll('owners');
+  const findOwnerByName = (name) => owners.find((o) => (o.name || '').trim().toLowerCase() === name.trim().toLowerCase());
+
+  const linked = [];
+  const alreadyLinked = [];
+  const conflicts = [];
+  const unmatchedCustomers = [];
+  const skippedLines = [];
+  let ownersCreated = 0;
+
+  text.split('\n').forEach((rawLine) => {
+    const line = rawLine.trim();
+    if (!line) return;
+    const colonIdx = line.indexOf(':');
+    if (colonIdx === -1) { skippedLines.push(line); return; }
+    const customerName = line.slice(0, colonIdx).trim();
+    const rest = line.slice(colonIdx + 1).trim();
+    const commaIdx = rest.indexOf(',');
+    const ownerName = (commaIdx === -1 ? rest : rest.slice(0, commaIdx)).trim();
+    const phone = (commaIdx === -1 ? '' : rest.slice(commaIdx + 1).trim());
+    if (!customerName || !ownerName) { skippedLines.push(line); return; }
+
+    const customer = findCustomer(customerName);
+    if (!customer) { unmatchedCustomers.push(customerName); return; }
+
+    if (customer.ownerId) {
+      const existingOwner = store.getById('owners', customer.ownerId);
+      if (existingOwner && existingOwner.name.trim().toLowerCase() === ownerName.trim().toLowerCase()) {
+        alreadyLinked.push(`${customer.name} (already linked to ${existingOwner.name})`);
+      } else {
+        conflicts.push(`${customer.name} is already linked to a different owner (${existingOwner ? existingOwner.name : 'unknown'}) — left unchanged`);
+      }
+      return;
+    }
+
+    let owner = findOwnerByName(ownerName);
+    if (!owner) {
+      owner = store.create('owners', {
+        name: ownerName,
+        email: '',
+        phone: phone || '',
+        username: '',
+        passwordHash: '',
+      });
+      owners = [...owners, owner];
+      ownersCreated += 1;
+    } else if (phone && !owner.phone) {
+      // Fill in a phone number we now have for an owner that didn't have one yet —
+      // never overwrites a phone number that's already on file.
+      owner = store.update('owners', owner.id, { phone });
+      owners = owners.map((o) => (o.id === owner.id ? owner : o));
+    }
+
+    store.update('customers', customer.id, { ownerId: owner.id });
+    linked.push(`${customer.name} -> ${owner.name}`);
+  });
+
+  res.json({
+    linked,
+    linkedCount: linked.length,
+    ownersCreated,
+    alreadyLinked,
+    conflicts,
+    unmatchedCustomers,
+    skippedLines,
   });
 });
 
