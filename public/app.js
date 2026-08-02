@@ -1881,7 +1881,10 @@ window.downloadAgreementPdf = (ownerId) => {
 };
 
 async function loadSettingsTab() {
-  const settings = await api('/api/settings');
+  const [settings] = await Promise.all([
+    api('/api/settings'),
+    state.services.length === 0 ? api('/api/services').then((s) => { state.services = s; }) : Promise.resolve(),
+  ]);
   document.getElementById('googleReviewUrlInput').value = settings.googleReviewUrl || '';
   document.getElementById('depotAddressInput').value = settings.depotAddress || '';
   document.getElementById('depotStatus').textContent =
@@ -1889,10 +1892,27 @@ async function loadSettingsTab() {
       ? `Located ✓ (${settings.depotLat.toFixed(4)}, ${settings.depotLng.toFixed(4)})`
       : 'Not located yet — click "Save & locate."';
   document.getElementById('geocodeStatus').textContent = '';
+
+  const defaultServiceSelect = document.getElementById('defaultServiceSelect');
+  defaultServiceSelect.innerHTML = '<option value="">None set — these jobs won\'t auto-invoice</option>'
+    + state.services.map((s) => `<option value="${s.id}" ${String(s.id) === String(settings.defaultServiceId) ? 'selected' : ''}>${s.name} — ${money(s.defaultPrice)}</option>`).join('');
+  document.getElementById('defaultServiceStatus').textContent = '';
+
   loadAdminAccounts();
   loadServicesList();
   loadAddonsList();
 }
+
+document.getElementById('saveDefaultServiceBtn').addEventListener('click', async () => {
+  const statusEl = document.getElementById('defaultServiceStatus');
+  const serviceId = document.getElementById('defaultServiceSelect').value;
+  try {
+    await api('/api/settings', { method: 'PUT', body: JSON.stringify({ defaultServiceId: serviceId || '' }) });
+    statusEl.textContent = serviceId ? 'Saved ✓' : 'Cleared — auto-scheduled jobs with no other service won\'t auto-invoice.';
+  } catch (e) {
+    statusEl.textContent = 'Could not save: ' + e.message;
+  }
+});
 
 let editingServiceId = null;
 

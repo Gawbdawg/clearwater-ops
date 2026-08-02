@@ -18,6 +18,14 @@ router.put('/', (req, res) => {
   if (req.body.googleReviewUrl !== undefined) {
     updates.googleReviewUrl = req.body.googleReviewUrl;
   }
+  // The service to bill against when a completed job was never linked to a specific
+  // one and there's no prior job for that customer to infer it from — e.g. auto-
+  // scheduled vacation-rental turnover cleanings (lib/turnoverSchedule.js) or bulk
+  // text-imported appointments, neither of which has a "pick a service" step at all.
+  // See lib/autoInvoice.js#ensureServiceId. '' clears it back to no default.
+  if (req.body.defaultServiceId !== undefined) {
+    updates.defaultServiceId = req.body.defaultServiceId ? Number(req.body.defaultServiceId) : null;
+  }
   res.json(store.updateSettings(updates));
 });
 

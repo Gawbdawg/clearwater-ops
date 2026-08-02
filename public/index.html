@@ -359,6 +359,16 @@
         </div>
 
         <div class="portal-card" style="max-width:520px; margin:0 0 24px;">
+          <div style="font-size:14px; font-weight:600;">Default service for auto-scheduled jobs</div>
+          <p class="portal-sub" style="margin:0;">Used to price a completed job when it was never linked to a specific service and there's no prior job for that customer to go by — mainly auto-scheduled vacation-rental turnover cleanings and bulk-imported appointments, which don't have a "pick a service" step. Set this once and jobs like those will invoice automatically going forward. It never overrides a service you (or a form) picked on purpose.</p>
+          <label>Default service<select id="defaultServiceSelect"><option value="">None set — these jobs won't auto-invoice</option></select></label>
+          <div id="defaultServiceStatus" class="portal-sub" style="margin:0;"></div>
+          <div style="display:flex; gap:8px;">
+            <button class="btn primary" id="saveDefaultServiceBtn">Save</button>
+          </div>
+        </div>
+
+        <div class="portal-card" style="max-width:520px; margin:0 0 24px;">
           <div style="font-size:14px; font-weight:600;">Shop / depot address</div>
           <p class="portal-sub" style="margin:0;">Daily schedules and weekly emails order each technician's stops into an efficient route starting from here.</p>
           <label>Address<input type="text" id="depotAddressInput" /></label>
