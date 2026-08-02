@@ -48,7 +48,16 @@ app.use(cookieSession({
   httpOnly: true,
   sameSite: 'lax',
 }));
-app.use(express.static(path.join(__dirname, 'public')));
+// no-cache on the app's own JS/CSS/HTML so a fresh deploy is never masked by a
+// browser (or an intermediate CDN) serving a stale cached copy of a page's script —
+// each request still revalidates via ETag, so this doesn't meaningfully hurt speed.
+app.use(express.static(path.join(__dirname, 'public'), {
+  setHeaders: (res, filePath) => {
+    if (/\.(js|css|html)$/.test(filePath)) {
+      res.setHeader('Cache-Control', 'no-cache');
+    }
+  },
+}));
 app.use('/uploads', express.static(path.join(__dirname, 'data', 'uploads')));
 
 // Admin login (public — the login/setup screen itself has to be reachable without a session)
