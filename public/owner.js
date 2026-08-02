@@ -221,8 +221,24 @@ async function loadVisits() {
         ${v.serviceType ? `<div class="job-meta">${v.serviceType}</div>` : ''}
       </div>
       ${v.status === 'scheduled' ? renderVisitAddons(v) : (v.addons && v.addons.length ? `<div class="job-meta">Extras: ${v.addons.map((a) => `${a.name} ($${Number(a.price).toFixed(2)})`).join(', ')}</div>` : '')}
+      ${renderVisitPhotos(v)}
     </div>
   `).join('');
+}
+
+function renderVisitPhotos(v) {
+  const photos = v.photos || [];
+  if (photos.length === 0) return '';
+  return `
+    <div class="job-photos" style="margin-top:8px;">
+      ${photos.map((p) => `
+        <a class="job-photo" href="${p.url}" target="_blank" rel="noopener">
+          <img src="${p.url}" alt="${p.type} photo" />
+          <div class="job-photo-label">${p.type}</div>
+        </a>
+      `).join('')}
+    </div>
+  `;
 }
 
 function renderVisitAddons(v) {

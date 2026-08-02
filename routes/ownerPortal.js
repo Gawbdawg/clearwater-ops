@@ -55,6 +55,7 @@ router.get('/appointments', (req, res) => {
         serviceType: a.serviceType,
         propertyName: property ? property.name : 'Unknown property',
         addons: a.addons || [],
+        photos: (a.photos || []).map((p) => ({ id: p.id, type: p.type, url: p.url })),
       };
     })
     .sort((a, b) => (a.date + a.startTime).localeCompare(b.date + b.startTime));
