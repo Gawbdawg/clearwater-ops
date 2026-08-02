@@ -72,8 +72,7 @@ async function loadJobs() {
       ${renderPhotos(j)}
       ${renderAddons(j)}
       <div class="job-actions">
-        <button class="btn small" onclick="choosePhoto(${j.id}, 'before')">Add before photo</button>
-        <button class="btn small" onclick="choosePhoto(${j.id}, 'after')">Add after photo</button>
+        <button class="btn small" onclick="choosePhoto(${j.id}, 'after')">Add photo</button>
         ${j.status === 'scheduled' ? `<button class="btn small primary" onclick="markComplete(${j.id})">Mark complete</button>` : ''}
         ${j.status === 'completed' ? `<button class="btn small" onclick="markIncomplete(${j.id})">Undo — mark not complete</button>` : ''}
       </div>
