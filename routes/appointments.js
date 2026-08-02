@@ -1,7 +1,7 @@
 const express = require('express');
 const store = require('../lib/store');
 const { sendSms } = require('../lib/sms');
-const { maybeCreateInvoiceForCompletedAppointment } = require('../lib/autoInvoice');
+const { syncInvoiceForCompletedAppointment } = require('../lib/autoInvoice');
 const { makeCustomerMatcher } = require('../lib/customerMatch');
 const { futureDates } = require('../lib/recurrence');
 const router = express.Router();
@@ -67,7 +67,7 @@ router.post('/', (req, res) => {
     : [];
 
   const first = store.create('appointments', { ...base, date, seriesId: null, addons: cleanAddons });
-  maybeCreateInvoiceForCompletedAppointment(first);
+  syncInvoiceForCompletedAppointment(first);
 
   if (recurrence && recurrence !== 'none') {
     store.update('appointments', first.id, { seriesId: first.id });
@@ -89,7 +89,7 @@ router.put('/:id', (req, res) => {
   if (updates.serviceId !== undefined) updates.serviceId = updates.serviceId ? Number(updates.serviceId) : null;
   const updated = store.update('appointments', req.params.id, updates);
   if (!updated) return res.status(404).json({ error: 'Appointment not found' });
-  maybeCreateInvoiceForCompletedAppointment(updated);
+  syncInvoiceForCompletedAppointment(updated);
   res.json(enrich(updated));
 });
 

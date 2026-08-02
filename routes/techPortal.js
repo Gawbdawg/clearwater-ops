@@ -3,7 +3,7 @@ const store = require('../lib/store');
 const { requireTechAuth } = require('../lib/auth');
 const { orderStopsByRoute } = require('../lib/routeOptimizer');
 const { savePhoto, deletePhoto } = require('../lib/uploads');
-const { maybeCreateInvoiceForCompletedAppointment } = require('../lib/autoInvoice');
+const { syncInvoiceForCompletedAppointment } = require('../lib/autoInvoice');
 const router = express.Router();
 
 router.use(requireTechAuth);
@@ -88,7 +88,7 @@ router.put('/appointments/:id/status', (req, res) => {
     return res.status(400).json({ error: 'Invalid status' });
   }
   const updated = store.update('appointments', req.params.id, { status });
-  maybeCreateInvoiceForCompletedAppointment(updated);
+  syncInvoiceForCompletedAppointment(updated);
   res.json(hideApptAddonPrices(updated));
 });
 
@@ -107,6 +107,7 @@ router.post('/appointments/:id/addons', (req, res) => {
   if (existing.some((a) => a.id === addon.id)) return res.json(hideApptAddonPrices(appt));
   const addons = [...existing, { id: addon.id, name: addon.name, price: addon.price }];
   const updated = store.update('appointments', req.params.id, { addons });
+  syncInvoiceForCompletedAppointment(updated);
   res.json(hideApptAddonPrices(updated));
 });
 
@@ -126,6 +127,7 @@ router.post('/appointments/:id/addons/custom', (req, res) => {
   const entry = { id: `custom-${Date.now()}`, name, price };
   const addons = [...(appt.addons || []), entry];
   const updated = store.update('appointments', req.params.id, { addons });
+  syncInvoiceForCompletedAppointment(updated);
   res.json(hideApptAddonPrices(updated));
 });
 
@@ -137,6 +139,7 @@ router.delete('/appointments/:id/addons/:addonId', (req, res) => {
   }
   const addons = (appt.addons || []).filter((a) => String(a.id) !== req.params.addonId);
   const updated = store.update('appointments', req.params.id, { addons });
+  syncInvoiceForCompletedAppointment(updated);
   res.json(hideApptAddonPrices(updated));
 });
 
