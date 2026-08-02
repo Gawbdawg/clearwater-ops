@@ -114,7 +114,48 @@ router.get('/:id', (req, res) => {
   res.json({ ...withOwnerName(customer), appointments, invoices });
 });
 
-router.post('/', (req, res) => {
+// Geocodes an address without needing an existing customer record — used by the
+// customer form to verify an address as it's typed, before the customer is even saved.
+// Never throws a 500 for "address not found"; that's a normal, expected outcome the
+// admin needs to see and act on (fix a typo, or save anyway if the address is real but
+// just too new/rural for the geocoder), not a server error.
+router.post('/verify-address', async (req, res) => {
+  const { address } = req.body;
+  if (!address || !address.trim()) return res.status(400).json({ error: 'No address given' });
+  try {
+    const { lat, lng, displayName } = await geocodeAddress(address);
+    res.json({ found: true, lat, lng, displayName });
+  } catch (err) {
+    res.json({ found: false, error: err.message });
+  }
+});
+
+// Best-effort geocode used right after a create/update — deliberately swallows failures
+// (a typo'd or too-new/rural address shouldn't block saving the customer) and just
+// reports back whether it worked, via the fields merged into `updates`.
+async function tryGeocode(address, updates) {
+  if (!address || !address.trim()) {
+    updates.lat = null;
+    updates.lng = null;
+    updates.geocodedAddress = '';
+    updates.addressVerified = false;
+    return;
+  }
+  try {
+    const { lat, lng, displayName } = await geocodeAddress(address);
+    updates.lat = lat;
+    updates.lng = lng;
+    updates.geocodedAddress = displayName;
+    updates.addressVerified = true;
+  } catch (err) {
+    updates.lat = null;
+    updates.lng = null;
+    updates.geocodedAddress = '';
+    updates.addressVerified = false;
+  }
+}
+
+router.post('/', async (req, res) => {
   const {
     name, email, phone, address, notes, type, icalUrl, ownerId, newOwner, equipment,
     serviceFrequency, customFrequencyDays,
@@ -130,6 +171,9 @@ router.post('/', (req, res) => {
     }
   }
 
+  const geo = {};
+  await tryGeocode(address, geo);
+
   const customer = store.create('customers', {
     name,
     email: email || '',
@@ -142,11 +186,12 @@ router.post('/', (req, res) => {
     equipment: equipment || null,
     serviceFrequency: serviceFrequency || null,
     customFrequencyDays: customFrequencyDays ? Number(customFrequencyDays) : null,
+    ...geo,
   });
   res.status(201).json(withOwnerName(customer));
 });
 
-router.put('/:id', (req, res) => {
+router.put('/:id', async (req, res) => {
   const updates = { ...req.body };
   const newOwner = updates.newOwner;
   delete updates.newOwner;
@@ -164,11 +209,12 @@ router.put('/:id', (req, res) => {
     updates.customFrequencyDays = updates.customFrequencyDays ? Number(updates.customFrequencyDays) : null;
   }
 
-  // Address changed — clear cached coordinates so it gets re-geocoded, not routed using a stale location
+  // Address changed — re-geocode right away instead of just clearing the cached
+  // location, so a typo shows up immediately rather than waiting for the next
+  // "Geocode all addresses" pass (or worse, a tech getting routed to the wrong place).
   const existing = store.getById('customers', req.params.id);
   if (existing && updates.address !== undefined && updates.address !== existing.address) {
-    updates.lat = null;
-    updates.lng = null;
+    await tryGeocode(updates.address, updates);
   }
 
   const updated = store.update('customers', req.params.id, updates);
@@ -190,10 +236,11 @@ router.post('/:id/geocode', async (req, res) => {
   if (!customer) return res.status(404).json({ error: 'Customer not found' });
   if (!customer.address) return res.status(400).json({ error: 'No address on file' });
   try {
-    const { lat, lng } = await geocodeAddress(customer.address);
-    const updated = store.update('customers', req.params.id, { lat, lng });
+    const { lat, lng, displayName } = await geocodeAddress(customer.address);
+    const updated = store.update('customers', req.params.id, { lat, lng, geocodedAddress: displayName, addressVerified: true });
     res.json(withOwnerName(updated));
   } catch (err) {
+    store.update('customers', req.params.id, { addressVerified: false });
     res.status(400).json({ error: err.message });
   }
 });

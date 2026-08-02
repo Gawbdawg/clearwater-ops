@@ -121,6 +121,23 @@ function filterBadge(c) {
   return label;
 }
 
+// Shows whether an address has been successfully located by the geocoder — the same
+// lat/lng this depends on for route ordering (Settings → "Geocode all addresses" and
+// the technician daily route). No badge at all for a blank address; that's not a
+// verification failure, just nothing entered yet.
+function addressStatusBadge(c) {
+  if (!c.address) return '';
+  if (c.lat != null && c.lng != null) {
+    return `<span class="badge completed" title="${c.geocodedAddress || 'Located'}">✓ Located</span>`;
+  }
+  if (c.addressVerified === false) {
+    return '<span class="badge cancelled" title="Could not find this address on the map — double check for typos, or open Edit and re-save">⚠ Not located</span>';
+  }
+  // Older record from before addresses were auto-verified, or never run through
+  // "Geocode all addresses" — not a failure, just not checked yet.
+  return '<span class="badge draft" title="Hasn\'t been checked against the map yet — see Settings → Geocode all addresses">Not yet located</span>';
+}
+
 function renderCustomerTable() {
   const typeFilter = document.getElementById('customerTypeFilter').value;
   const search = document.getElementById('customerSearch').value.toLowerCase().trim();
@@ -139,7 +156,7 @@ function renderCustomerTable() {
       <td><span class="badge ${c.type === 'vacation' ? 'sent' : 'completed'}">${typeLabel(c.type)}</span></td>
       <td>${c.phone || ''}</td>
       <td>${c.email || ''}</td>
-      <td>${c.address || ''}</td>
+      <td>${c.address || ''} ${addressStatusBadge(c)}</td>
       <td>${filterBadge(c)}</td>
       <td>${c.notes || ''}</td>
       <td>${c.ownerName || '—'}</td>
@@ -187,7 +204,12 @@ function customerForm(c = {}) {
     </label>
     <label>Phone<input id="f_phone" value="${c.phone || ''}" /></label>
     <label>Email<input id="f_email" value="${c.email || ''}" /></label>
-    <label>Address<input id="f_address" value="${c.address || ''}" /></label>
+    <label>Address<input id="f_address" value="${c.address || ''}" onblur="verifyAddressField()" /></label>
+    <div id="addressVerifyStatus" class="portal-sub" style="margin:-6px 0 0;">${
+      c.address && c.lat != null && c.lng != null
+        ? `✓ Located: ${c.geocodedAddress || c.address}`
+        : ''
+    }</div>
     <label>Service frequency
       <select id="f_serviceFrequency" onchange="onServiceFrequencyChange()">
         <option value="" ${!c.serviceFrequency ? 'selected' : ''}>Not set</option>
@@ -248,6 +270,28 @@ function customerForm(c = {}) {
     </div>
   `;
 }
+
+let lastVerifiedAddress = null; // avoids re-hitting the geocoder if the field didn't actually change
+
+window.verifyAddressField = async () => {
+  const input = document.getElementById('f_address');
+  const statusEl = document.getElementById('addressVerifyStatus');
+  const address = input.value.trim();
+  if (!address) { statusEl.textContent = ''; lastVerifiedAddress = null; return; }
+  if (address === lastVerifiedAddress) return;
+  statusEl.textContent = 'Checking address…';
+  try {
+    const result = await api('/api/customers/verify-address', { method: 'POST', body: JSON.stringify({ address }) });
+    lastVerifiedAddress = address;
+    if (result.found) {
+      statusEl.innerHTML = `<span style="color:#256b32;">✓ Found: ${result.displayName}</span>`;
+    } else {
+      statusEl.innerHTML = `<span style="color:#a3382f;">⚠ Couldn't find this address on the map — double check for typos. You can still save it.</span>`;
+    }
+  } catch (e) {
+    statusEl.textContent = '';
+  }
+};
 
 window.onServiceFrequencyChange = () => {
   const wrap = document.getElementById('f_customFreqWrap');
@@ -381,7 +425,7 @@ window.viewCustomerProfile = async (id) => {
         <div class="row"><span class="label">Type:</span> ${typeLabel(c.type)}</div>
         <div class="row"><span class="label">Phone:</span> ${c.phone || '—'}</div>
         <div class="row"><span class="label">Email:</span> ${c.email || '—'}</div>
-        <div class="row"><span class="label">Address:</span> ${c.address || '—'}</div>
+        <div class="row"><span class="label">Address:</span> ${c.address || '—'} ${addressStatusBadge(c)}</div>
         <div class="row"><span class="label">Owner:</span> ${c.ownerName || '—'}</div>
         ${c.notes ? `<div class="row"><span class="label">Notes:</span> ${c.notes}</div>` : ''}
       </div>
