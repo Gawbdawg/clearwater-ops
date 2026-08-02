@@ -3,6 +3,7 @@ const store = require('../lib/store');
 const { hashPassword, sanitizeCustomer } = require('../lib/auth');
 const { geocodeAddress } = require('../lib/geocode');
 const { makeCustomerMatcher } = require('../lib/customerMatch');
+const { futureDates } = require('../lib/recurrence');
 const router = express.Router();
 
 // Creates a brand-new owner account and returns its id — used when an admin links
@@ -243,6 +244,49 @@ router.post('/:id/geocode', async (req, res) => {
     store.update('customers', req.params.id, { addressVerified: false });
     res.status(400).json({ error: err.message });
   }
+});
+
+// Turns a customer's saved service frequency (Weekly / Every 2 weeks / Every 4 weeks /
+// Custom) directly into an actual recurring appointment series on the calendar —
+// otherwise that setting only pre-fills the "Repeats" dropdown the next time someone
+// happens to manually schedule this customer, which is easy to forget to do. Body:
+// { startDate, startTime, technicianId, serviceId } — startDate/startTime required,
+// the rest optional (an unassigned/no-service starter visit is still useful on its own).
+router.post('/:id/schedule-recurring', (req, res) => {
+  const customer = store.getById('customers', req.params.id);
+  if (!customer) return res.status(404).json({ error: 'Customer not found' });
+  if (!customer.serviceFrequency) {
+    return res.status(400).json({ error: 'This customer has no service frequency set — set one on the Edit Customer form first.' });
+  }
+  const { startDate, startTime, technicianId, serviceId } = req.body;
+  if (!startDate || !startTime) {
+    return res.status(400).json({ error: 'startDate and startTime are required' });
+  }
+
+  const service = serviceId ? store.getById('services', serviceId) : null;
+  const base = {
+    customerId: customer.id,
+    technicianId: technicianId ? Number(technicianId) : null,
+    startTime,
+    endTime: '',
+    serviceId: service ? service.id : null,
+    serviceType: service ? service.name : 'General service',
+    status: 'scheduled',
+    notes: '',
+    chlorine: '',
+    ph: '',
+    alkalinity: '',
+    addons: [],
+  };
+
+  const first = store.create('appointments', { ...base, date: startDate, seriesId: null });
+  store.update('appointments', first.id, { seriesId: first.id });
+  const dates = futureDates(startDate, customer.serviceFrequency, null, customer.customFrequencyDays);
+  dates.forEach((d) => {
+    store.create('appointments', { ...base, date: d, seriesId: first.id, status: 'scheduled' });
+  });
+
+  res.status(201).json({ created: dates.length + 1, firstAppointmentId: first.id });
 });
 
 module.exports = router;

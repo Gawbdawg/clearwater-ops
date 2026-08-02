@@ -29,6 +29,37 @@ router.get('/properties', (req, res) => {
   res.json(properties);
 });
 
+// Read-only view of scheduled/completed service visits across all of this owner's
+// properties — the actual jobs the admin/tech has on the calendar, not the booking
+// dates or requests the owner enters themselves. Defaults to upcoming + recent (last
+// 30 days) so the list doesn't grow forever; ?all=1 returns full history.
+router.get('/appointments', (req, res) => {
+  const myPropertyIds = store.getAll('customers')
+    .filter((c) => c.ownerId === req.session.ownerId)
+    .map((c) => c.id);
+  let appts = store.getAll('appointments').filter((a) => myPropertyIds.includes(a.customerId) && a.status !== 'cancelled');
+  if (!req.query.all) {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 30);
+    const cutoffStr = cutoff.toISOString().slice(0, 10);
+    appts = appts.filter((a) => a.date >= cutoffStr);
+  }
+  const enriched = appts
+    .map((a) => {
+      const property = store.getById('customers', a.customerId);
+      return {
+        id: a.id,
+        date: a.date,
+        startTime: a.startTime,
+        status: a.status,
+        serviceType: a.serviceType,
+        propertyName: property ? property.name : 'Unknown property',
+      };
+    })
+    .sort((a, b) => (a.date + a.startTime).localeCompare(b.date + b.startTime));
+  res.json(enriched);
+});
+
 // ---- Occupied / guest-booking date ranges (scoped to one of this owner's properties) ----
 router.get('/bookings', (req, res) => {
   const myPropertyIds = store.getAll('customers')

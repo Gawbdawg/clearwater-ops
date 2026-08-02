@@ -60,11 +60,15 @@ async function showDash(owner) {
     document.getElementById('introText').textContent =
       "No properties are linked to your account yet — contact Clear Water Spa Service to get set up.";
     document.getElementById('propertySwitcherRow').classList.add('hidden');
+    document.getElementById('visitsSection').style.display = 'none';
     document.getElementById('bookingSection').style.display = 'none';
     document.getElementById('requestPropertyRow').classList.add('hidden');
     document.getElementById('requestsList').innerHTML = '';
     return;
   }
+
+  document.getElementById('visitsSection').style.display = '';
+  loadVisits();
 
   document.getElementById('introText').textContent = 'Request a hot tub service date any time, or manage your guest booking dates below.';
 
@@ -123,6 +127,26 @@ async function loadBookings() {
         ${b.notes ? `<div class="job-meta">${b.notes}</div>` : ''}
       </div>
       <button class="btn small danger" onclick="deleteBooking(${b.id})">Remove</button>
+    </div>
+  `).join('');
+}
+
+async function loadVisits() {
+  const visits = await api('/api/owner/appointments');
+  const el = document.getElementById('visitsList');
+  if (visits.length === 0) {
+    el.innerHTML = '<div class="empty-state">No visits on the calendar yet.</div>';
+    return;
+  }
+  const today = new Date().toISOString().slice(0, 10);
+  el.innerHTML = visits.map((v) => `
+    <div class="owner-list-item">
+      <div>
+        <strong>${niceDate(v.date)}${v.startTime ? ' · ' + v.startTime : ''}</strong>
+        ${properties.length > 1 ? `<span class="job-meta">${v.propertyName}</span>` : ''}
+        <span class="badge ${v.status === 'completed' ? 'completed' : v.date < today ? 'draft' : 'scheduled'}">${v.status}</span>
+        ${v.serviceType ? `<div class="job-meta">${v.serviceType}</div>` : ''}
+      </div>
     </div>
   `).join('');
 }

@@ -426,6 +426,7 @@ window.viewCustomerProfile = async (id) => {
         <div class="row"><span class="label">Phone:</span> ${c.phone || '—'}</div>
         <div class="row"><span class="label">Email:</span> ${c.email || '—'}</div>
         <div class="row"><span class="label">Address:</span> ${c.address || '—'} ${addressStatusBadge(c)}</div>
+        <div class="row"><span class="label">Service frequency:</span> ${frequencyLabel(c)}</div>
         <div class="row"><span class="label">Owner:</span> ${c.ownerName || '—'}</div>
         ${c.notes ? `<div class="row"><span class="label">Notes:</span> ${c.notes}</div>` : ''}
       </div>
@@ -452,10 +453,64 @@ window.viewCustomerProfile = async (id) => {
     </div>
     <div class="modal-actions">
       <button class="btn" onclick="closeModal()">Close</button>
+      ${c.serviceFrequency ? `<button class="btn" onclick="openScheduleRecurringModal(${c.id}, '${c.name.replace(/'/g, "\\'")}')">Schedule recurring visits</button>` : ''}
       <button class="btn primary" onclick="closeModal(); editCustomer(${c.id});">Edit customer</button>
     </div>
   `;
   openModal(c.name, html, true);
+};
+
+function frequencyLabel(c) {
+  const labels = { weekly: 'Weekly', biweekly: 'Every 2 weeks', every4weeks: 'Every 4 weeks', custom: `Every ${c.customFrequencyDays || '?'} days` };
+  return c.serviceFrequency ? (labels[c.serviceFrequency] || c.serviceFrequency) : 'Not set';
+}
+
+window.openScheduleRecurringModal = async (customerId, customerName) => {
+  if (state.technicians.length === 0) state.technicians = await api('/api/technicians');
+  if (state.services.length === 0) state.services = await api('/api/services');
+  const html = `
+    <p class="portal-sub" style="margin:0 0 8px;">Generates the actual recurring visits on the calendar from this customer's saved service frequency (${frequencyLabel(state.customers.find((x) => x.id === customerId) || {})}), starting from a date you pick below.</p>
+    <label>First visit date<input type="date" id="f_srDate" value="${todayStr()}" /></label>
+    <label>Start time<input type="time" id="f_srTime" value="09:00" /></label>
+    <label>Technician<select id="f_srTech">${techOptions(null)}</select></label>
+    <label>Service (optional — picks a price for auto-invoicing)
+      <select id="f_srService">
+        <option value="">Custom / none</option>
+        ${state.services.map((s) => `<option value="${s.id}">${s.name}</option>`).join('')}
+      </select>
+    </label>
+    <div id="scheduleRecurringError" class="portal-error hidden"></div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal()">Cancel</button>
+      <button class="btn primary" id="scheduleRecurringRunBtn">Schedule visits</button>
+    </div>
+  `;
+  openModal(`Schedule recurring visits — ${customerName}`, html);
+  document.getElementById('scheduleRecurringRunBtn').addEventListener('click', async () => {
+    const btn = document.getElementById('scheduleRecurringRunBtn');
+    const errEl = document.getElementById('scheduleRecurringError');
+    errEl.classList.add('hidden');
+    btn.disabled = true;
+    try {
+      const result = await api(`/api/customers/${customerId}/schedule-recurring`, {
+        method: 'POST',
+        body: JSON.stringify({
+          startDate: document.getElementById('f_srDate').value,
+          startTime: document.getElementById('f_srTime').value,
+          technicianId: document.getElementById('f_srTech').value || null,
+          serviceId: document.getElementById('f_srService').value || null,
+        }),
+      });
+      alert(`Scheduled ${result.created} visit(s) on the calendar.`);
+      closeModal();
+      loadAppointments();
+    } catch (e) {
+      errEl.textContent = e.message;
+      errEl.classList.remove('hidden');
+    } finally {
+      btn.disabled = false;
+    }
+  });
 };
 
 function niceDateShort(dateStr) {
