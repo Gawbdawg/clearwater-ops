@@ -58,48 +58,67 @@
           </label>
         </div>
 
-        <div id="visitsSection">
+        <nav class="owner-tabs" id="ownerTabs">
+          <button class="owner-tab-btn active" data-tab="overview">Overview</button>
+          <button class="owner-tab-btn" data-tab="visits">Visits</button>
+          <button class="owner-tab-btn hidden" id="calendarTabBtn" data-tab="calendar">Booking calendar</button>
+          <button class="owner-tab-btn" data-tab="requests">Requests <span id="pendingRequestsBadge" class="tab-count hidden"></span></button>
+        </nav>
+
+        <!-- Overview -->
+        <div id="tab-overview" class="owner-tab-panel">
+          <div class="owner-summary-grid" id="overviewSummary"></div>
+        </div>
+
+        <!-- Visits -->
+        <div id="tab-visits" class="owner-tab-panel hidden">
           <h2>Upcoming service visits</h2>
-          <p class="portal-sub">The hot tub service visits already on the calendar for your propert${'y/ies'}.</p>
+          <p class="portal-sub">The hot tub service visits already on the calendar for your properties.</p>
           <div id="visitsList"></div>
         </div>
 
-        <div id="bookingSection">
-          <h2>Guest booking dates <span id="bookingSectionPropertyName" style="font-weight:400; color:#5a7078;"></span></h2>
-          <p class="portal-sub">Mark date ranges when this property is occupied so we schedule around your guests — either automatically from your Airbnb/VRBO calendar, or by adding dates yourself below.</p>
+        <!-- Booking calendar (vacation properties only) -->
+        <div id="tab-calendar" class="owner-tab-panel hidden">
+          <div id="bookingSection">
+            <h2>Guest booking dates <span id="bookingSectionPropertyName" style="font-weight:400; color:#5a7078;"></span></h2>
+            <p class="portal-sub">Mark date ranges when this property is occupied so we schedule around your guests — either automatically from your Airbnb/VRBO calendar, or by adding dates yourself below.</p>
 
-          <div class="portal-card" style="max-width:none; margin: 0 0 20px;">
-            <div style="font-size:14px; font-weight:600;">Auto-sync from Airbnb, VRBO, or another platform</div>
-            <p class="portal-sub" style="margin:0;">Paste this property's iCal export link (in Airbnb: Listing → Availability → Sync calendars → Export calendar). We'll pull in your booked dates automatically.</p>
-            <label>Calendar link (iCal URL)<input type="text" id="icalUrlInput" placeholder="https://www.airbnb.com/calendar/ical/....ics" /></label>
-            <div id="icalSyncStatus" class="portal-sub" style="margin:0;"></div>
-            <div style="display:flex; gap:8px;">
-              <button class="btn primary" id="saveIcalBtn">Save & sync now</button>
+            <div class="portal-card" style="max-width:none; margin: 0 0 20px;">
+              <div style="font-size:14px; font-weight:600;">Auto-sync from Airbnb, VRBO, or another platform</div>
+              <p class="portal-sub" style="margin:0;">Paste this property's iCal export link (in Airbnb: Listing → Availability → Sync calendars → Export calendar). We'll pull in your booked dates automatically.</p>
+              <label>Calendar link (iCal URL)<input type="text" id="icalUrlInput" placeholder="https://www.airbnb.com/calendar/ical/....ics" /></label>
+              <div id="icalSyncStatus" class="portal-sub" style="margin:0;"></div>
+              <div style="display:flex; gap:8px;">
+                <button class="btn primary" id="saveIcalBtn">Save & sync now</button>
+              </div>
             </div>
-          </div>
 
+            <div class="calendar-form-row">
+              <label>Check-in <input type="date" id="bookingStart" /></label>
+              <label>Check-out <input type="date" id="bookingEnd" /></label>
+              <label style="flex:1; min-width:160px;">Notes <input type="text" id="bookingNotes" placeholder="optional" /></label>
+              <button class="btn primary" id="addBookingBtn">Add manually</button>
+            </div>
+            <div id="bookingsList"></div>
+          </div>
+        </div>
+
+        <!-- Requests -->
+        <div id="tab-requests" class="owner-tab-panel hidden">
+          <h2>Request a service date</h2>
+          <p class="portal-sub">Ask for a specific date — an extra clean, a repair, anything — and we'll confirm or reach out to reschedule.</p>
           <div class="calendar-form-row">
-            <label>Check-in <input type="date" id="bookingStart" /></label>
-            <label>Check-out <input type="date" id="bookingEnd" /></label>
-            <label style="flex:1; min-width:160px;">Notes <input type="text" id="bookingNotes" placeholder="optional" /></label>
-            <button class="btn primary" id="addBookingBtn">Add manually</button>
+            <label id="requestPropertyRow" class="hidden">Property <select id="requestPropertySelect"></select></label>
+            <label>Requested date <input type="date" id="requestDate" /></label>
+            <label style="flex:1; min-width:160px;">Notes <input type="text" id="requestNotes" placeholder="e.g. extra clean, repair" /></label>
           </div>
-          <div id="bookingsList"></div>
+          <div id="requestAddonsRow" class="hidden" style="margin:-6px 0 12px;">
+            <div class="portal-sub" style="margin:0 0 6px;">Add any extras for this visit:</div>
+            <div id="requestAddonsList" class="job-addon-chips"></div>
+          </div>
+          <button class="btn primary" id="addRequestBtn">Request</button>
+          <div id="requestsList" style="margin-top:16px;"></div>
         </div>
-
-        <h2 style="margin-top:28px;">Request a service date</h2>
-        <p class="portal-sub">Ask for a specific date — an extra clean, a repair, anything — and we'll confirm or reach out to reschedule.</p>
-        <div class="calendar-form-row">
-          <label id="requestPropertyRow" class="hidden">Property <select id="requestPropertySelect"></select></label>
-          <label>Requested date <input type="date" id="requestDate" /></label>
-          <label style="flex:1; min-width:160px;">Notes <input type="text" id="requestNotes" placeholder="e.g. extra clean, repair" /></label>
-        </div>
-        <div id="requestAddonsRow" class="hidden" style="margin:-6px 0 12px;">
-          <div class="portal-sub" style="margin:0 0 6px;">Add any extras for this visit:</div>
-          <div id="requestAddonsList" class="job-addon-chips"></div>
-        </div>
-        <button class="btn primary" id="addRequestBtn">Request</button>
-        <div id="requestsList" style="margin-top:16px;"></div>
       </section>
     </main>
   </div>

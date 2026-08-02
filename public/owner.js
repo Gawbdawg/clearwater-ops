@@ -60,17 +60,14 @@ async function showDash(owner) {
     document.getElementById('introText').textContent =
       "No properties are linked to your account yet — contact Clear Water Spa Service to get set up.";
     document.getElementById('propertySwitcherRow').classList.add('hidden');
-    document.getElementById('visitsSection').style.display = 'none';
-    document.getElementById('bookingSection').style.display = 'none';
+    document.getElementById('ownerTabs').classList.add('hidden');
+    document.getElementById('tab-overview').innerHTML = '';
     document.getElementById('requestPropertyRow').classList.add('hidden');
     document.getElementById('requestsList').innerHTML = '';
     return;
   }
 
-  document.getElementById('visitsSection').style.display = '';
-  loadVisits();
-
-  document.getElementById('introText').textContent = 'Request a hot tub service date any time, or manage your guest booking dates below.';
+  document.getElementById('introText').textContent = 'Everything about your service and bookings, in one place.';
 
   const hasMultiple = properties.length > 1;
   const switcherRow = document.getElementById('propertySwitcherRow');
@@ -88,13 +85,16 @@ async function showDash(owner) {
 
   selectedPropertyId = properties[0].id;
   onPropertyChange();
-  await loadRequests();
+  loadVisits();
+  loadRequests();
+  loadOverview();
 }
 
 function onPropertyChange() {
   const p = selectedProperty();
   const isVacation = p.type === 'vacation';
-  document.getElementById('bookingSection').style.display = isVacation ? '' : 'none';
+  document.getElementById('calendarTabBtn').classList.toggle('hidden', !isVacation);
+  if (!isVacation && activeTab === 'calendar') switchTab('overview');
   document.getElementById('bookingSectionPropertyName').textContent = properties.length > 1 ? `— ${p.name}` : '';
   if (isVacation) {
     document.getElementById('icalUrlInput').value = p.icalUrl || '';
@@ -103,6 +103,79 @@ function onPropertyChange() {
   }
   const reqSelect = document.getElementById('requestPropertySelect');
   if (reqSelect) reqSelect.value = String(selectedPropertyId);
+}
+
+// ---- Tabs ----
+let activeTab = 'overview';
+
+function switchTab(tab) {
+  activeTab = tab;
+  document.querySelectorAll('.owner-tab-btn').forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.tab === tab);
+  });
+  document.querySelectorAll('.owner-tab-panel').forEach((panel) => {
+    panel.classList.toggle('hidden', panel.id !== `tab-${tab}`);
+  });
+}
+
+document.getElementById('ownerTabs').addEventListener('click', (e) => {
+  const btn = e.target.closest('.owner-tab-btn');
+  if (btn && !btn.classList.contains('hidden')) switchTab(btn.dataset.tab);
+});
+
+// ---- Overview ----
+async function loadOverview() {
+  const [visits, requests, bookings] = await Promise.all([
+    api('/api/owner/appointments'),
+    api('/api/owner/service-requests'),
+    api('/api/owner/bookings'),
+  ]);
+  const today = new Date().toISOString().slice(0, 10);
+
+  const nextVisit = visits.find((v) => v.date >= today && v.status === 'scheduled');
+  const pendingCount = requests.filter((r) => r.status === 'pending').length;
+  const hasVacation = properties.some((p) => p.type === 'vacation');
+  const upcomingBookings = bookings.filter((b) => b.endDate >= today).length;
+
+  document.getElementById('pendingRequestsBadge').textContent = pendingCount || '';
+  document.getElementById('pendingRequestsBadge').classList.toggle('hidden', pendingCount === 0);
+
+  const cards = [
+    {
+      value: nextVisit ? niceDateShort(nextVisit.date) : '—',
+      label: 'Next scheduled visit',
+      detail: nextVisit ? (properties.length > 1 ? nextVisit.propertyName : (nextVisit.serviceType || '')) : 'Nothing scheduled yet',
+    },
+    {
+      value: String(pendingCount),
+      label: pendingCount === 1 ? 'Pending request' : 'Pending requests',
+      detail: pendingCount ? 'Awaiting confirmation' : 'All caught up',
+    },
+    {
+      value: String(properties.length),
+      label: properties.length === 1 ? 'Property' : 'Properties',
+      detail: properties.map((p) => p.name).join(', '),
+    },
+  ];
+  if (hasVacation) {
+    cards.push({
+      value: String(upcomingBookings),
+      label: upcomingBookings === 1 ? 'Upcoming guest booking' : 'Upcoming guest bookings',
+      detail: 'Across all vacation properties',
+    });
+  }
+
+  document.getElementById('overviewSummary').innerHTML = cards.map((c) => `
+    <div class="owner-summary-card">
+      <div class="value">${c.value}</div>
+      <div class="label">${c.label}</div>
+      ${c.detail ? `<div class="detail">${c.detail}</div>` : ''}
+    </div>
+  `).join('');
+}
+
+function niceDateShort(dateStr) {
+  return new Date(dateStr + 'T00:00:00').toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
 }
 
 function updateSyncStatus(p) {
