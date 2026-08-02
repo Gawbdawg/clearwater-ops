@@ -14,6 +14,13 @@ function myProperty(req, propertyId) {
   return property;
 }
 
+// Read-only catalog of upcharges an owner can ask to have included with a service
+// request (e.g. grill cleaning, window spray) — managed by the admin in Settings, see
+// routes/addons.js.
+router.get('/addons', (req, res) => {
+  res.json(store.getAll('addons').sort((a, b) => a.name.localeCompare(b.name)));
+});
+
 // ---- This owner's properties ----
 router.get('/properties', (req, res) => {
   const properties = store.getAll('customers')
@@ -75,16 +82,26 @@ router.get('/service-requests', (req, res) => {
 });
 
 router.post('/service-requests', (req, res) => {
-  const { propertyId, requestedDate, notes } = req.body;
+  const { propertyId, requestedDate, notes, addonIds } = req.body;
   if (!propertyId || !requestedDate) {
     return res.status(400).json({ error: 'propertyId and requestedDate are required' });
   }
   if (!myProperty(req, propertyId)) return res.status(404).json({ error: 'Property not found' });
+  // Snapshot the chosen upcharges' name/price at request time, same as everywhere else
+  // addons are attached — so a later catalog price change doesn't change what was asked
+  // for. Carried onto the appointment automatically when an admin schedules this request
+  // (see routes/appointments.js and public/app.js's scheduleRequest).
+  const catalog = store.getAll('addons');
+  const addons = (Array.isArray(addonIds) ? addonIds : [])
+    .map((id) => catalog.find((a) => a.id === Number(id)))
+    .filter(Boolean)
+    .map((a) => ({ id: a.id, name: a.name, price: a.price }));
   const request = store.create('serviceRequests', {
     customerId: Number(propertyId),
     requestedDate,
     notes: notes || '',
     status: 'pending',
+    addons,
   });
   res.status(201).json(request);
 });

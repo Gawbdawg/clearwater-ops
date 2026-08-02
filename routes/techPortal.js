@@ -97,6 +97,25 @@ router.post('/appointments/:id/addons', (req, res) => {
   res.json(updated);
 });
 
+// Attach a one-off upcharge that isn't in the catalog (e.g. "Replaced a filter, $15")
+// — for whatever comes up on site that the admin hasn't pre-added to Settings. Gets a
+// unique string id (rather than a catalog addon's numeric id) so it can still be
+// removed individually and never collides with a real catalog entry.
+router.post('/appointments/:id/addons/custom', (req, res) => {
+  const appt = store.getById('appointments', req.params.id);
+  if (!appt || appt.technicianId !== req.session.technicianId) {
+    return res.status(404).json({ error: 'Appointment not found' });
+  }
+  const name = (req.body.name || '').trim();
+  const price = Number(req.body.price);
+  if (!name) return res.status(400).json({ error: 'A name is required' });
+  if (!price || price <= 0) return res.status(400).json({ error: 'A price greater than $0 is required' });
+  const entry = { id: `custom-${Date.now()}`, name, price };
+  const addons = [...(appt.addons || []), entry];
+  const updated = store.update('appointments', req.params.id, { addons });
+  res.json(updated);
+});
+
 // Remove an upcharge that was added by mistake.
 router.delete('/appointments/:id/addons/:addonId', (req, res) => {
   const appt = store.getById('appointments', req.params.id);

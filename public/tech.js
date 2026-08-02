@@ -82,9 +82,9 @@ async function loadJobs() {
 }
 
 function renderAddons(j) {
-  if (addonsCatalog.length === 0) return '';
   const attached = j.addons || [];
   const attachedIds = attached.map((a) => a.id);
+  const customAttached = attached.filter((a) => String(a.id).startsWith('custom-'));
   const total = attached.reduce((sum, a) => sum + (Number(a.price) || 0), 0);
   return `
     <div class="job-addons">
@@ -95,6 +95,12 @@ function renderAddons(j) {
             ${attachedIds.includes(a.id) ? '✓ ' : '+ '}${a.name} $${Number(a.price).toFixed(2)}
           </button>
         `).join('')}
+        ${customAttached.map((a) => `
+          <button class="addon-chip added" onclick="removeCustomAddon(${j.id}, '${a.id}')">
+            ✓ ${a.name} $${Number(a.price).toFixed(2)}
+          </button>
+        `).join('')}
+        <button class="addon-chip" onclick="addCustomAddon(${j.id})">+ Other…</button>
       </div>
     </div>
   `;
@@ -110,6 +116,30 @@ window.toggleAddon = async (apptId, addonId, currentlyAttached) => {
     await loadJobs();
   } catch (e) {
     alert(e.message || 'Could not update upcharge');
+  }
+};
+
+window.addCustomAddon = async (apptId) => {
+  const name = prompt('What was the upcharge for? (e.g. "Replaced filter")');
+  if (!name) return;
+  const priceStr = prompt(`How much for "${name}"?`, '10');
+  if (!priceStr) return;
+  const price = Number(priceStr);
+  if (!price || price <= 0) { alert('Enter a price greater than $0.'); return; }
+  try {
+    await api(`/api/tech/appointments/${apptId}/addons/custom`, { method: 'POST', body: JSON.stringify({ name, price }) });
+    await loadJobs();
+  } catch (e) {
+    alert(e.message || 'Could not add upcharge');
+  }
+};
+
+window.removeCustomAddon = async (apptId, addonId) => {
+  try {
+    await api(`/api/tech/appointments/${apptId}/addons/${addonId}`, { method: 'DELETE' });
+    await loadJobs();
+  } catch (e) {
+    alert(e.message || 'Could not remove upcharge');
   }
 };
 

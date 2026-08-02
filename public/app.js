@@ -1,4 +1,4 @@
-const state = { customers: [], owners: [], technicians: [], appointments: [], invoices: [], services: [], addons: [] };
+const state = { customers: [], owners: [], technicians: [], appointments: [], invoices: [], services: [], addons: [], serviceRequests: [] };
 
 function todayStr() {
   return new Date().toISOString().slice(0, 10);
@@ -877,6 +877,19 @@ function apptForm(a = {}) {
     </label>
     <label>Notes<textarea id="f_apptNotes" rows="3">${a.notes || ''}</textarea></label>
 
+    ${state.addons.length ? `
+      <div style="display:flex; flex-direction: column; gap: 8px; border-top: 1px solid #eef1f2; padding-top: 12px;">
+        <div style="font-size:13px; font-weight:600; color:#33505c;">Upcharges (optional)</div>
+        <div class="job-addon-chips" id="f_addonChips">
+          ${state.addons.map((ad) => `
+            <button type="button" class="addon-chip ${(a.addons || []).some((x) => x.id === ad.id) ? 'added' : ''}" data-addon-id="${ad.id}" data-addon-name="${ad.name}" data-addon-price="${ad.price}" onclick="this.classList.toggle('added')">
+              ${(a.addons || []).some((x) => x.id === ad.id) ? '✓ ' : '+ '}${ad.name} (${money(ad.price)})
+            </button>
+          `).join('')}
+        </div>
+      </div>
+    ` : ''}
+
     <div style="display:flex; flex-direction: column; gap: 12px; border-top: 1px solid #eef1f2; padding-top: 12px;">
       <div style="font-size:13px; font-weight:600; color:#33505c;">Water chemistry (optional)</div>
       <div style="display:flex; gap:10px;">
@@ -960,6 +973,14 @@ function readApptForm() {
     ph: document.getElementById('f_ph').value,
     alkalinity: document.getElementById('f_alkalinity').value,
   };
+  const addonChips = document.querySelectorAll('#f_addonChips .addon-chip.added');
+  if (addonChips.length) {
+    data.addons = Array.from(addonChips).map((el) => ({
+      id: Number(el.dataset.addonId),
+      name: el.dataset.addonName,
+      price: Number(el.dataset.addonPrice),
+    }));
+  }
   const recurrenceEl = document.getElementById('f_recurrence');
   if (recurrenceEl) {
     data.recurrence = recurrenceEl.value;
@@ -975,6 +996,7 @@ async function openNewApptModal(dateStr) {
   if (state.customers.length === 0) state.customers = await api('/api/customers');
   if (state.technicians.length === 0) state.technicians = await api('/api/technicians');
   if (state.services.length === 0) state.services = await api('/api/services');
+  if (state.addons.length === 0) state.addons = await api('/api/addons');
   if (state.customers.length === 0) { alert('Add a customer first.'); return; }
   openModal('New Appointment', apptForm(dateStr ? { date: dateStr } : {}));
   onApptCustomerChange();
@@ -1040,6 +1062,7 @@ document.getElementById('bulkImportBtn').addEventListener('click', openBulkImpor
 window.editAppt = async (id) => {
   const a = state.appointments.find((x) => x.id === id);
   if (state.services.length === 0) state.services = await api('/api/services');
+  if (state.addons.length === 0) state.addons = await api('/api/addons');
   openModal('Edit Appointment', apptForm(a));
   document.getElementById('saveApptBtn').addEventListener('click', async () => {
     try {
@@ -1399,12 +1422,13 @@ async function loadRequests() {
   const status = document.getElementById('requestStatusFilter').value;
   const url = status ? '/api/service-requests?status=' + status : '/api/service-requests';
   const requests = await api(url);
+  state.serviceRequests = requests;
   const tbody = document.querySelector('#requestsTable tbody');
   tbody.innerHTML = requests.map((r) => `
     <tr>
       <td>${r.customerName}</td>
       <td>${r.requestedDate}</td>
-      <td>${r.notes || ''}</td>
+      <td>${r.notes || ''}${r.addons && r.addons.length ? `<div class="job-meta">Extras: ${r.addons.map((a) => `${a.name} (${money(a.price)})`).join(', ')}</div>` : ''}</td>
       <td><span class="badge ${r.status === 'pending' ? 'draft' : r.status === 'scheduled' ? 'completed' : 'cancelled'}">${r.status}</span></td>
       <td>
         ${r.status === 'pending' ? `
@@ -1431,7 +1455,9 @@ window.scheduleRequest = async (requestId, customerId, requestedDate) => {
   if (state.customers.length === 0) state.customers = await api('/api/customers');
   if (state.technicians.length === 0) state.technicians = await api('/api/technicians');
   if (state.services.length === 0) state.services = await api('/api/services');
-  openModal('New Appointment', apptForm({ customerId, date: requestedDate }));
+  if (state.addons.length === 0) state.addons = await api('/api/addons');
+  const request = state.serviceRequests.find((r) => r.id === requestId);
+  openModal('New Appointment', apptForm({ customerId, date: requestedDate, addons: request ? request.addons : [] }));
   onApptCustomerChange();
   document.getElementById('saveApptBtn').addEventListener('click', async () => {
     try {

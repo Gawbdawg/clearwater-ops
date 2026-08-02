@@ -88,7 +88,7 @@ function futureDates(startDate, frequency, recurrenceEndDate, customDays) {
 router.post('/', (req, res) => {
   const {
     customerId, technicianId, date, startTime, endTime, serviceType, serviceId, status, notes,
-    chlorine, ph, alkalinity, recurrence, recurrenceEndDate, recurrenceCustomDays,
+    chlorine, ph, alkalinity, recurrence, recurrenceEndDate, recurrenceCustomDays, addons,
   } = req.body;
   if (!customerId || !date || !startTime) {
     return res.status(400).json({ error: 'customerId, date, and startTime are required' });
@@ -107,8 +107,16 @@ router.post('/', (req, res) => {
     ph: ph || '',
     alkalinity: alkalinity || '',
   };
+  // Upcharges (e.g. a property owner requesting grill cleaning, or an admin adding one
+  // while scheduling) only apply to this specific visit — a recurring series generated
+  // below deliberately does NOT copy them onto every future occurrence.
+  const cleanAddons = Array.isArray(addons)
+    ? addons
+      .filter((a) => a && a.name)
+      .map((a) => ({ id: a.id, name: a.name, price: Number(a.price) || 0 }))
+    : [];
 
-  const first = store.create('appointments', { ...base, date, seriesId: null });
+  const first = store.create('appointments', { ...base, date, seriesId: null, addons: cleanAddons });
   maybeCreateInvoiceForCompletedAppointment(first);
 
   if (recurrence && recurrence !== 'none') {

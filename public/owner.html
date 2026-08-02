@@ -66,9 +66,13 @@
           <label id="requestPropertyRow" class="hidden">Property <select id="requestPropertySelect"></select></label>
           <label>Requested date <input type="date" id="requestDate" /></label>
           <label style="flex:1; min-width:160px;">Notes <input type="text" id="requestNotes" placeholder="e.g. extra clean, repair" /></label>
-          <button class="btn primary" id="addRequestBtn">Request</button>
         </div>
-        <div id="requestsList"></div>
+        <div id="requestAddonsRow" class="hidden" style="margin:-6px 0 12px;">
+          <div class="portal-sub" style="margin:0 0 6px;">Add any extras for this visit:</div>
+          <div id="requestAddonsList" class="job-addon-chips"></div>
+        </div>
+        <button class="btn primary" id="addRequestBtn">Request</button>
+        <div id="requestsList" style="margin-top:16px;"></div>
       </section>
     </main>
   </div>

@@ -15,6 +15,8 @@ const logoutBtn = document.getElementById('logoutBtn');
 
 let properties = [];
 let selectedPropertyId = null;
+let addonsCatalog = [];
+let selectedAddonIds = new Set();
 
 function showError(msg) {
   loginError.textContent = msg;
@@ -47,6 +49,12 @@ async function showDash(owner) {
   document.getElementById('welcomeMsg').textContent = `Hi ${owner.name}`;
 
   properties = await api('/api/owner/properties');
+  try {
+    addonsCatalog = await api('/api/owner/addons');
+  } catch (e) {
+    addonsCatalog = [];
+  }
+  renderRequestAddonOptions();
 
   if (properties.length === 0) {
     document.getElementById('introText').textContent =
@@ -133,11 +141,33 @@ async function loadRequests() {
         ${properties.length > 1 ? `<span class="job-meta">${r.propertyName}</span>` : ''}
         <span class="badge ${r.status === 'pending' ? 'draft' : r.status === 'scheduled' ? 'completed' : 'cancelled'}">${r.status}</span>
         ${r.notes ? `<div class="job-meta">${r.notes}</div>` : ''}
+        ${r.addons && r.addons.length ? `<div class="job-meta">Extras: ${r.addons.map((a) => `${a.name} ($${Number(a.price).toFixed(2)})`).join(', ')}</div>` : ''}
       </div>
       ${r.status === 'pending' ? `<button class="btn small danger" onclick="deleteRequest(${r.id})">Cancel</button>` : ''}
     </div>
   `).join('');
 }
+
+function renderRequestAddonOptions() {
+  const row = document.getElementById('requestAddonsRow');
+  const list = document.getElementById('requestAddonsList');
+  if (addonsCatalog.length === 0) {
+    row.classList.add('hidden');
+    return;
+  }
+  row.classList.remove('hidden');
+  list.innerHTML = addonsCatalog.map((a) => `
+    <button type="button" class="addon-chip ${selectedAddonIds.has(a.id) ? 'added' : ''}" onclick="toggleRequestAddon(${a.id})">
+      ${selectedAddonIds.has(a.id) ? '✓ ' : '+ '}${a.name} ($${Number(a.price).toFixed(2)})
+    </button>
+  `).join('');
+}
+
+window.toggleRequestAddon = (addonId) => {
+  if (selectedAddonIds.has(addonId)) selectedAddonIds.delete(addonId);
+  else selectedAddonIds.add(addonId);
+  renderRequestAddonOptions();
+};
 
 window.deleteBooking = async (id) => {
   await api('/api/owner/bookings/' + id, { method: 'DELETE' });
@@ -203,9 +233,12 @@ document.getElementById('addRequestBtn').addEventListener('click', async () => {
   const btn = document.getElementById('addRequestBtn');
   btn.disabled = true;
   try {
-    await api('/api/owner/service-requests', { method: 'POST', body: JSON.stringify({ propertyId, requestedDate, notes }) });
+    const addonIds = Array.from(selectedAddonIds);
+    await api('/api/owner/service-requests', { method: 'POST', body: JSON.stringify({ propertyId, requestedDate, notes, addonIds }) });
     document.getElementById('requestDate').value = '';
     document.getElementById('requestNotes').value = '';
+    selectedAddonIds = new Set();
+    renderRequestAddonOptions();
     loadRequests();
   } catch (e) {
     alert('Could not submit request: ' + e.message);
