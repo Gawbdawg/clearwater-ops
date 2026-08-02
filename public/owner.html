@@ -132,6 +132,19 @@
           </div>
         </div>
 
+        <!-- Property switcher — always visible whenever an owner has more than one
+             property, regardless of which tab is active or what type the CURRENTLY
+             selected property is. This used to live inside the vacation-only "Booking
+             calendar" tab, which meant an owner whose selected property happened to be
+             residential had no way to ever reach it (that tab doesn't even show up for a
+             residential property) — so a second property could look like it didn't
+             exist at all. -->
+        <div id="propertySwitcherRow" class="filter-row hidden">
+          <label>Property
+            <select id="propertySelect"></select>
+          </label>
+        </div>
+
         <nav class="owner-tabs" id="ownerTabs">
           <button class="owner-tab-btn active" data-tab="overview">Overview</button>
           <button class="owner-tab-btn" data-tab="visits">Services</button>
@@ -211,11 +224,6 @@
 
         <!-- Booking calendar (vacation properties only) -->
         <div id="tab-calendar" class="owner-tab-panel hidden">
-          <div id="propertySwitcherRow" class="filter-row hidden">
-            <label>Property
-              <select id="propertySelect"></select>
-            </label>
-          </div>
 
           <div id="bookingSection">
             <h2>Guest booking dates <span id="bookingSectionPropertyName" style="font-weight:400; color:#5a7078;"></span></h2>
