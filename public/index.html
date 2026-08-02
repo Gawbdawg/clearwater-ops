@@ -165,8 +165,17 @@
           </div>
         </div>
         <p class="portal-hint">Owner accounts log into <code id="ownerPortalLink2"></code>. Link homes to an owner from the Homes tab — one owner can have several homes. "Auto-link owner accounts" creates one for every home that doesn't have one yet (grouping by matching email/phone), with no password set until you add one.</p>
+        <div class="filter-row">
+          <label>Type
+            <select id="ownerTypeFilter">
+              <option value="">All</option>
+              <option value="owner">Vacation rental owners</option>
+              <option value="manager">Property managers</option>
+            </select>
+          </label>
+        </div>
         <table class="data-table" id="ownerTable">
-          <thead><tr><th>Name</th><th>Phone</th><th>Email</th><th>Username</th><th>Properties</th><th>Billing</th><th>Login set up?</th><th></th></tr></thead>
+          <thead><tr><th>Name</th><th>Type</th><th>Phone</th><th>Email</th><th>Username</th><th>Properties</th><th>Billing</th><th>Login set up?</th><th></th></tr></thead>
           <tbody></tbody>
         </table>
       </section>

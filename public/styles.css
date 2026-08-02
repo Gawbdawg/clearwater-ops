@@ -214,6 +214,43 @@ textarea { width: 100%; resize: vertical; }
 .cal-cell .cal-appt-chip.completed { background: #e5f5e8; color: #256b32; border-left-color: #256b32; }
 .cal-cell .cal-more { font-size: 11px; color: var(--text-faint); font-weight: 600; padding-left: 2px; }
 .day-detail-list { display: flex; flex-direction: column; gap: 8px; }
+
+/* ---------- Gantt-style booking calendar (continuous check-in/out bars) ---------- */
+.gantt-cal { margin-bottom: 22px; }
+.gantt-daylabels { display: grid; grid-template-columns: repeat(7, 1fr); margin-bottom: 4px; }
+.gantt-cal-body {
+  border: 1px solid var(--border); border-radius: 10px; overflow: hidden;
+  background: var(--card-bg); box-shadow: var(--shadow-sm);
+}
+.gantt-week { position: relative; display: grid; grid-template-columns: repeat(7, 1fr); border-bottom: 1px solid var(--border); }
+.gantt-week:last-child { border-bottom: none; }
+.gantt-daycell { border-right: 1px solid var(--border); box-sizing: border-box; padding: 6px 6px 0; }
+.gantt-daycell:last-child { border-right: none; }
+.gantt-daycell.other-month { opacity: 0.4; }
+.gantt-daynum {
+  font-size: 12px; font-weight: 700; color: #33505c; display: inline-flex; align-items: center;
+  justify-content: center; width: 20px; height: 20px; border-radius: 50%;
+}
+.gantt-daynum.is-today { background: var(--primary); color: #fff; }
+.gantt-bar {
+  position: absolute; height: 18px; font-size: 11px; font-weight: 600; color: #fff;
+  display: flex; align-items: center; padding: 0 7px; overflow: hidden; white-space: nowrap;
+  text-overflow: ellipsis; cursor: pointer; box-sizing: border-box; box-shadow: var(--shadow-sm);
+}
+.gantt-bar.round-start { border-top-left-radius: 9px; border-bottom-left-radius: 9px; margin-left: 3px; }
+.gantt-bar.round-end { border-top-right-radius: 9px; border-bottom-right-radius: 9px; margin-right: 3px; }
+.gantt-bar-auto { background: var(--primary); }
+.gantt-bar-manual { background: #c98a00; }
+.owner-list-item.flash-highlight { animation: ganttFlashHighlight 1.2s ease; }
+@keyframes ganttFlashHighlight {
+  0% { background: #fff3cd; }
+  100% { background: transparent; }
+}
+@media (max-width: 700px) {
+  .gantt-bar { font-size: 9px; padding: 0 4px; }
+  .gantt-daycell { padding: 3px 4px 0; }
+  .gantt-daynum { width: 16px; height: 16px; font-size: 10px; }
+}
 @media (max-width: 700px) {
   .cal-cell { min-height: 68px; font-size: 11px; padding: 5px; }
   .cal-daylabel { font-size: 10px; }

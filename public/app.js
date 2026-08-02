@@ -561,10 +561,20 @@ function niceDateShort(dateStr) {
 // ---------- Owners ----------
 async function loadOwners() {
   state.owners = await api('/api/owners');
+  renderOwnerTable();
+}
+
+function renderOwnerTable() {
+  const filterEl = document.getElementById('ownerTypeFilter');
+  const filter = filterEl ? filterEl.value : '';
+  const owners = filter
+    ? state.owners.filter((o) => (o.accountType || 'owner') === filter)
+    : state.owners;
   const tbody = document.querySelector('#ownerTable tbody');
-  tbody.innerHTML = state.owners.map((o) => `
+  tbody.innerHTML = owners.map((o) => `
     <tr>
       <td>${o.name}</td>
+      <td>${o.accountType === 'manager' ? '<span class="badge draft">Property manager</span>' : '<span class="badge scheduled">Owner</span>'}</td>
       <td>${o.phone || ''}</td>
       <td>${o.email || ''}</td>
       <td>${o.username || '—'}</td>
@@ -578,8 +588,10 @@ async function loadOwners() {
         <button class="btn small danger" onclick="deleteOwner(${o.id})">Delete</button>
       </td>
     </tr>
-  `).join('') || '<tr><td colspan="8" class="empty-state">No owner accounts yet. Create one from the Homes tab when editing a home.</td></tr>';
+  `).join('') || '<tr><td colspan="9" class="empty-state">No owner accounts yet. Create one from the Homes tab when editing a home.</td></tr>';
 }
+
+document.getElementById('ownerTypeFilter').addEventListener('change', renderOwnerTable);
 
 function ownerForm(o = {}) {
   const pricing = o.customPricing || {};
@@ -593,6 +605,12 @@ function ownerForm(o = {}) {
     : '<div class="portal-hint" style="margin:0;">Add services in Settings → Service catalog first, then come back here to set this owner\'s custom prices.</div>';
   return `
     <label>Name (required)<input id="f_oname" value="${o.name || ''}" /></label>
+    <label>Account type
+      <select id="f_oaccountType">
+        <option value="owner" ${(o.accountType || 'owner') === 'owner' ? 'selected' : ''}>Vacation rental owner</option>
+        <option value="manager" ${o.accountType === 'manager' ? 'selected' : ''}>Property manager</option>
+      </select>
+    </label>
     <label>Phone<input id="f_ophone" value="${o.phone || ''}" /></label>
     <label>Email<input id="f_oemail" value="${o.email || ''}" /></label>
     <label>Username<input id="f_ousername" value="${o.username || ''}" autocomplete="off" /></label>
@@ -629,6 +647,7 @@ function readOwnerForm() {
   });
   return {
     name: document.getElementById('f_oname').value,
+    accountType: document.getElementById('f_oaccountType').value,
     phone: document.getElementById('f_ophone').value,
     email: document.getElementById('f_oemail').value,
     username: document.getElementById('f_ousername').value,

@@ -229,6 +229,14 @@
             <h2>Guest booking dates <span id="bookingSectionPropertyName" style="font-weight:400; color:#5a7078;"></span></h2>
             <p class="portal-sub">Mark date ranges when this property is occupied so we schedule around your guests — either automatically from your Airbnb/VRBO calendar, or by adding dates yourself below.</p>
 
+            <div class="cal-nav">
+              <button class="btn" id="bookingCalPrevBtn">‹</button>
+              <h2 id="bookingCalMonthLabel"></h2>
+              <button class="btn" id="bookingCalNextBtn">›</button>
+              <button class="btn" id="bookingCalTodayBtn">Today</button>
+            </div>
+            <div class="gantt-cal" id="bookingGanttCal"></div>
+
             <div class="portal-card" style="max-width:none; margin: 0 0 20px;">
               <div style="font-size:14px; font-weight:600;">Auto-sync from Airbnb, VRBO, or another platform</div>
               <p class="portal-sub" style="margin:0;">Paste this property's iCal export link (in Airbnb: Listing → Availability → Sync calendars → Export calendar). We'll pull in your booked dates automatically.</p>

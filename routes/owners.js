@@ -36,7 +36,7 @@ router.get('/:id/agreement.pdf', (req, res) => {
 });
 
 router.post('/', (req, res) => {
-  const { name, email, phone, username, password, customPricing, billingMode, newsletterSubscribed } = req.body;
+  const { name, email, phone, username, password, customPricing, billingMode, newsletterSubscribed, accountType } = req.body;
   if (!name) return res.status(400).json({ error: 'Name is required' });
   if (username) {
     const existing = store.getAll('owners').find((o) => (o.username || '').toLowerCase() === username.toLowerCase());
@@ -56,6 +56,10 @@ router.post('/', (req, res) => {
     passwordHash: password ? hashPassword(password) : '',
     customPricing: cleanedPricing,
     billingMode: billingMode === 'monthly' ? 'monthly' : 'perJob',
+    // Purely an admin-side organizational label — a "manager" isn't treated any
+    // differently anywhere else in the app (same portal, same login flow). Lets the
+    // Owners list be filtered into vacation rental owners vs. property managers.
+    accountType: accountType === 'manager' ? 'manager' : 'owner',
     // Defaults to subscribed since the plan is to collect this consent as part of the
     // owner's signed waiver going forward. Admin can flip it off per-owner (or right
     // here at creation), and owners can also unsubscribe themselves from their portal.
@@ -88,6 +92,9 @@ router.put('/:id', (req, res) => {
   if (password) updates.passwordHash = hashPassword(password);
   if (req.body.billingMode !== undefined) {
     updates.billingMode = req.body.billingMode === 'monthly' ? 'monthly' : 'perJob';
+  }
+  if (req.body.accountType !== undefined) {
+    updates.accountType = req.body.accountType === 'manager' ? 'manager' : 'owner';
   }
   // customPricing: { [serviceId]: price } — per-owner price overrides, covering every
   // property linked to this owner. A missing/blank entry falls back to that service's

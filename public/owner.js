@@ -169,6 +169,8 @@ function onPropertyChange() {
   if (isVacation) {
     document.getElementById('icalUrlInput').value = p.icalUrl || '';
     updateSyncStatus(p);
+    const now = new Date();
+    bookingCalMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     loadBookings();
   }
   renderPropertyDetails(p);
@@ -429,13 +431,15 @@ function updateSyncStatus(p) {
 
 async function loadBookings() {
   const bookings = await api('/api/owner/bookings?propertyId=' + selectedPropertyId);
+  currentBookings = bookings;
+  renderBookingGanttGrid();
   const el = document.getElementById('bookingsList');
   if (bookings.length === 0) {
     el.innerHTML = '<div class="empty-state">No guest dates added yet.</div>';
     return;
   }
   el.innerHTML = bookings.map((b) => `
-    <div class="owner-list-item">
+    <div class="owner-list-item" id="booking-row-${b.id}">
       <div>
         <strong>${niceDate(b.startDate)} – ${niceDate(b.endDate)}</strong>
         ${b.source === 'ical' ? '<span class="badge sent">Auto-synced</span>' : '<span class="badge completed">Manual</span>'}
@@ -445,6 +449,130 @@ async function loadBookings() {
     </div>
   `).join('');
 }
+
+// ---- Booking calendar (Gantt-style month grid — continuous bars from check-in to
+// check-out, so occupancy/turnover reads at a glance instead of as a flat date list) ----
+let bookingCalMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+let currentBookings = [];
+
+function fmtDate(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${dd}`;
+}
+
+function daysBetween(fromStr, toStr) {
+  return Math.round((new Date(toStr + 'T00:00:00') - new Date(fromStr + 'T00:00:00')) / 86400000);
+}
+
+function renderBookingGanttGrid() {
+  const year = bookingCalMonth.getFullYear();
+  const month = bookingCalMonth.getMonth();
+  document.getElementById('bookingCalMonthLabel').textContent =
+    bookingCalMonth.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+
+  const firstDayOfWeek = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const gridStart = new Date(year, month, 1 - firstDayOfWeek);
+  const numWeeks = Math.ceil((firstDayOfWeek + daysInMonth) / 7);
+  const today = todayStr();
+  const dayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+  let bodyHtml = '';
+  for (let w = 0; w < numWeeks; w++) {
+    const weekDates = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(gridStart);
+      d.setDate(gridStart.getDate() + w * 7 + i);
+      weekDates.push(d);
+    }
+    const weekStartStr = fmtDate(weekDates[0]);
+    const weekEndStr = fmtDate(weekDates[6]);
+
+    // Bookings that touch this week — clipped to the week's date range, so a long
+    // stay becomes one bar segment per row instead of one bar that would have to
+    // visually cross a line-wrap (which CSS can't do for us here).
+    const segs = currentBookings
+      .filter((b) => b.startDate <= weekEndStr && b.endDate >= weekStartStr)
+      .map((b) => {
+        const segStart = b.startDate < weekStartStr ? weekStartStr : b.startDate;
+        const segEnd = b.endDate > weekEndStr ? weekEndStr : b.endDate;
+        return {
+          booking: b,
+          startCol: daysBetween(weekStartStr, segStart),
+          endCol: daysBetween(weekStartStr, segEnd),
+          isActualStart: segStart === b.startDate,
+          isActualEnd: segEnd === b.endDate,
+        };
+      })
+      .sort((a, b2) => a.startCol - b2.startCol || a.endCol - b2.endCol);
+
+    // Greedy interval-graph lane assignment so overlapping bookings (e.g. a
+    // same-day turnover) stack instead of colliding.
+    const laneEndCol = [];
+    segs.forEach((seg) => {
+      let lane = laneEndCol.findIndex((endCol) => endCol < seg.startCol);
+      if (lane === -1) { lane = laneEndCol.length; laneEndCol.push(seg.endCol); }
+      else { laneEndCol[lane] = seg.endCol; }
+      seg.lane = lane;
+    });
+
+    const barTopBase = 34;
+    const laneHeight = 22;
+    const rowMinHeight = Math.max(50, barTopBase + laneEndCol.length * laneHeight + 6);
+
+    const dayCellsHtml = weekDates.map((d) => {
+      const dateStr = fmtDate(d);
+      const inMonth = d.getMonth() === month;
+      return `<div class="gantt-daycell ${inMonth ? '' : 'other-month'}" style="min-height:${rowMinHeight}px;">
+        <span class="gantt-daynum ${dateStr === today ? 'is-today' : ''}">${d.getDate()}</span>
+      </div>`;
+    }).join('');
+
+    const barsHtml = segs.map((seg) => {
+      const b = seg.booking;
+      const label = b.notes ? b.notes : 'Booked';
+      const left = (seg.startCol / 7) * 100;
+      const width = ((seg.endCol - seg.startCol + 1) / 7) * 100;
+      const top = barTopBase + seg.lane * laneHeight;
+      const roundClass = `${seg.isActualStart ? 'round-start' : ''} ${seg.isActualEnd ? 'round-end' : ''}`;
+      const colorClass = b.source === 'ical' ? 'gantt-bar-auto' : 'gantt-bar-manual';
+      const title = `${label} — ${niceDate(b.startDate)} to ${niceDate(b.endDate)}`.replace(/"/g, '&quot;');
+      return `<div class="gantt-bar ${colorClass} ${roundClass}" style="left:${left}%; width:${width}%; top:${top}px;" title="${title}" onclick="highlightBookingRow(${b.id})">
+        <span class="gantt-bar-label">${label.replace(/</g, '&lt;')}</span>
+      </div>`;
+    }).join('');
+
+    bodyHtml += `<div class="gantt-week" style="min-height:${rowMinHeight}px;">${dayCellsHtml}${barsHtml}</div>`;
+  }
+
+  const labelsHtml = dayLabels.map((d) => `<div class="cal-daylabel">${d}</div>`).join('');
+  document.getElementById('bookingGanttCal').innerHTML =
+    `<div class="gantt-daylabels">${labelsHtml}</div><div class="gantt-cal-body">${bodyHtml}</div>`;
+}
+
+window.highlightBookingRow = (id) => {
+  const row = document.getElementById('booking-row-' + id);
+  if (!row) return;
+  row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  row.classList.add('flash-highlight');
+  setTimeout(() => row.classList.remove('flash-highlight'), 1200);
+};
+
+document.getElementById('bookingCalPrevBtn').addEventListener('click', () => {
+  bookingCalMonth = new Date(bookingCalMonth.getFullYear(), bookingCalMonth.getMonth() - 1, 1);
+  renderBookingGanttGrid();
+});
+document.getElementById('bookingCalNextBtn').addEventListener('click', () => {
+  bookingCalMonth = new Date(bookingCalMonth.getFullYear(), bookingCalMonth.getMonth() + 1, 1);
+  renderBookingGanttGrid();
+});
+document.getElementById('bookingCalTodayBtn').addEventListener('click', () => {
+  const d = new Date();
+  bookingCalMonth = new Date(d.getFullYear(), d.getMonth(), 1);
+  renderBookingGanttGrid();
+});
 
 async function loadVisits() {
   const visits = await api('/api/owner/appointments');
