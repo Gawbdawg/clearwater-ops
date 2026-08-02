@@ -165,6 +165,44 @@ router.post('/properties/:id/schedule-service', (req, res) => {
   res.status(201).json(result);
 });
 
+// Lets an owner change a frequency they've already set, rather than having to contact
+// the business — replaces this property's future, not-yet-completed visits with a
+// freshly generated series at the new frequency/start date. Deliberately leaves alone
+// anything already completed (so billing/photo history for past jobs is untouched) or
+// already cancelled. Removes the old future appointments outright rather than routing
+// through the cancellation-fee flow (see /appointments/:id/cancel) — this is the owner
+// adjusting their own standing schedule, not backing out of a specific confirmed visit
+// on short notice, so no fee applies.
+router.put('/properties/:id/service-frequency', (req, res) => {
+  const property = myProperty(req, req.params.id);
+  if (!property) return res.status(404).json({ error: 'Property not found' });
+  if (property.type === 'vacation') {
+    return res.status(400).json({ error: 'Vacation properties are scheduled automatically around your guest bookings instead.' });
+  }
+  const { frequency, startDate } = req.body;
+  if (!['weekly', 'biweekly', 'every4weeks'].includes(frequency)) {
+    return res.status(400).json({ error: 'Choose a valid frequency.' });
+  }
+  if (!startDate) {
+    return res.status(400).json({ error: 'Pick a start date.' });
+  }
+  const today = new Date().toISOString().slice(0, 10);
+  const toRemove = store.getAll('appointments')
+    .filter((a) => a.customerId === property.id && a.status === 'scheduled' && a.date >= today);
+  toRemove.forEach((a) => store.remove('appointments', a.id));
+
+  const service = store.getAll('services').find((s) => s.pricingMode === 'frequency');
+  store.update('customers', property.id, { serviceFrequency: frequency });
+  const updated = store.getById('customers', property.id);
+  const result = generateRecurringSeries(updated, {
+    startDate,
+    startTime: '09:00',
+    technicianId: null,
+    serviceId: service ? service.id : null,
+  });
+  res.status(200).json({ ...result, removed: toRemove.length });
+});
+
 // Read-only view of scheduled/completed service visits across all of this owner's
 // properties — the actual jobs the admin/tech has on the calendar, not the booking
 // dates or requests the owner enters themselves. Defaults to upcoming + recent (last
@@ -189,6 +227,7 @@ router.get('/appointments', (req, res) => {
         startTime: a.startTime,
         status: a.status,
         serviceType: a.serviceType,
+        propertyId: a.customerId,
         propertyName: property ? property.name : 'Unknown property',
         addons: a.addons || [],
         photos: (a.photos || []).map((p) => ({ id: p.id, type: p.type, url: p.url })),

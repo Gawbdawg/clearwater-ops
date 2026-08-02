@@ -135,6 +135,7 @@
         <nav class="owner-tabs" id="ownerTabs">
           <button class="owner-tab-btn active" data-tab="overview">Overview</button>
           <button class="owner-tab-btn" data-tab="visits">Services</button>
+          <button class="owner-tab-btn" data-tab="svccal">Calendar</button>
           <button class="owner-tab-btn hidden" id="calendarTabBtn" data-tab="calendar">Booking calendar</button>
           <button class="owner-tab-btn" data-tab="requests">Requests <span id="pendingRequestsBadge" class="tab-count hidden"></span></button>
         </nav>
@@ -161,6 +162,20 @@
           <h2>Upcoming services</h2>
           <p class="portal-sub">The hot tub services already on the calendar for your properties.</p>
           <div id="visitsList"></div>
+        </div>
+
+        <!-- Service calendar -->
+        <div id="tab-svccal" class="owner-tab-panel hidden">
+          <h2>Calendar <span id="svcCalPropertyName" style="font-weight:400; color:#5a7078;"></span></h2>
+          <p class="portal-sub">Blue days are scheduled, green are completed, amber are pending requests. Click any open day to request service.</p>
+          <div class="cal-nav">
+            <button class="btn" id="svcCalPrevBtn">‹</button>
+            <h2 id="svcCalMonthLabel"></h2>
+            <button class="btn" id="svcCalNextBtn">›</button>
+            <button class="btn" id="svcCalTodayBtn">Today</button>
+          </div>
+          <div class="cal-grid" id="svcCalGrid"></div>
+          <div id="svcCalDayPanel" class="portal-card hidden" style="max-width:none; margin-top:16px;"></div>
         </div>
 
         <!-- Booking calendar (vacation properties only) -->
