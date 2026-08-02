@@ -10,6 +10,7 @@ async function api(path, opts = {}) {
 
 const loginView = document.getElementById('loginView');
 const dashView = document.getElementById('dashView');
+const termsView = document.getElementById('termsView');
 const loginError = document.getElementById('loginError');
 const logoutBtn = document.getElementById('logoutBtn');
 
@@ -34,16 +35,63 @@ function selectedProperty() {
 async function checkSession() {
   try {
     const owner = await api('/api/owner-auth/me');
-    await showDash(owner);
+    await enterPortal(owner);
   } catch (e) {
     loginView.classList.remove('hidden');
+    termsView.classList.add('hidden');
     dashView.classList.add('hidden');
     logoutBtn.style.display = 'none';
   }
 }
 
+// Routes a just-logged-in (or session-restored) owner to the Terms of Service gate if
+// they haven't clicked through it yet, or straight to the dashboard if they have.
+async function enterPortal(owner) {
+  logoutBtn.style.display = '';
+  if (!owner.agreedToTerms) {
+    showTermsGate(owner);
+    return;
+  }
+  await showDash(owner);
+}
+
+function showTermsGate(owner) {
+  loginView.classList.add('hidden');
+  dashView.classList.add('hidden');
+  termsView.classList.remove('hidden');
+  document.getElementById('agreeTermsCheckbox').checked = false;
+  document.getElementById('termsError').classList.add('hidden');
+  document.getElementById('continueAfterTermsBtn').onclick = async () => {
+    const errEl = document.getElementById('termsError');
+    errEl.classList.add('hidden');
+    if (!document.getElementById('agreeTermsCheckbox').checked) {
+      errEl.textContent = 'Please check the box to confirm you agree before continuing.';
+      errEl.classList.remove('hidden');
+      return;
+    }
+    const btn = document.getElementById('continueAfterTermsBtn');
+    btn.disabled = true;
+    try {
+      const result = await api('/api/owner/agree-to-terms', { method: 'POST' });
+      // Agreeing also opts them into the newsletter (the agreement is the consent) —
+      // reflect that on the local owner object so the toggle on Overview shows correctly
+      // without a re-fetch.
+      owner.agreedToTerms = result.agreedToTerms;
+      owner.newsletterSubscribed = result.newsletterSubscribed;
+      termsView.classList.add('hidden');
+      await showDash(owner);
+    } catch (e) {
+      errEl.textContent = e.message || 'Could not save your agreement — please try again.';
+      errEl.classList.remove('hidden');
+    } finally {
+      btn.disabled = false;
+    }
+  };
+}
+
 async function showDash(owner) {
   loginView.classList.add('hidden');
+  termsView.classList.add('hidden');
   dashView.classList.remove('hidden');
   logoutBtn.style.display = '';
   document.getElementById('welcomeMsg').textContent = `Hi ${owner.name}`;
@@ -323,11 +371,36 @@ async function loadVisits() {
   `).join('');
 }
 
+// Pins a date+time string to the shop's own timezone (Pacific) rather than whatever
+// timezone this code happens to be running in — matches lib/timezone.js's
+// businessTimeToUtc exactly, so the browser's confirm-dialog wording below always
+// agrees with the server's actual fee decision instead of drifting apart when the
+// owner isn't in the same timezone as the server (or the shop).
+const BUSINESS_TIMEZONE = 'America/Los_Angeles';
+
+function businessTimeToUtc(dateStr, timeStr) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const [h, min] = (timeStr || '09:00').split(':').map(Number);
+  const utcGuess = new Date(Date.UTC(y, m - 1, d, h, min || 0, 0));
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: BUSINESS_TIMEZONE,
+    hourCycle: 'h23',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+  }).formatToParts(utcGuess).reduce((acc, p) => {
+    if (p.type !== 'literal') acc[p.type] = Number(p.value);
+    return acc;
+  }, {});
+  const asIfUtc = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second);
+  const offsetMinutes = (asIfUtc - utcGuess.getTime()) / 60000;
+  return new Date(utcGuess.getTime() - offsetMinutes * 60000);
+}
+
 // Cancellation policy: 24+ hours' notice is free; less than 24 hours bills half the
 // service price. The actual charge/no-charge decision is made server-side (this is
 // just for the confirm-dialog wording) — see routes/ownerPortal.js#/appointments/:id/cancel.
 window.cancelVisit = async (apptId, dateStr, startTime) => {
-  const visitDateTime = new Date(`${dateStr}T${startTime || '09:00'}:00`);
+  const visitDateTime = businessTimeToUtc(dateStr, startTime);
   const hoursUntil = (visitDateTime.getTime() - Date.now()) / (1000 * 60 * 60);
   const warning = hoursUntil < 24
     ? "This visit is less than 24 hours away. Our cancellation policy charges half the service price as a fee for cancellations this close to the visit. Cancel anyway?"
@@ -520,7 +593,7 @@ document.getElementById('loginBtn').addEventListener('click', async () => {
   const password = document.getElementById('loginPassword').value;
   try {
     const owner = await api('/api/owner-auth/login', { method: 'POST', body: JSON.stringify({ username, password }) });
-    await showDash(owner);
+    await enterPortal(owner);
   } catch (e) {
     showError(e.message);
   }
@@ -584,7 +657,7 @@ async function verifyLoginCode() {
   btn.disabled = true;
   try {
     const owner = await api('/api/owner-auth/verify-code', { method: 'POST', body: JSON.stringify({ email: codeLoginEmail, code }) });
-    await showDash(owner);
+    await enterPortal(owner);
   } catch (e) {
     showError(e.message);
   } finally {

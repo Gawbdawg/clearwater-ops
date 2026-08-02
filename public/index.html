@@ -276,6 +276,21 @@
           <h3>Completed jobs by technician</h3>
           <div id="reportTechBars"></div>
         </div>
+        <div class="profile-section" style="background:#fff; box-shadow:0 1px 3px rgba(0,0,0,0.06); margin-top:16px;">
+          <h3>Cancelled visits</h3>
+          <table class="data-table">
+            <thead><tr><th>Date</th><th>Customer</th><th>Service</th><th>Cancellation fee</th></tr></thead>
+            <tbody id="cancelledVisitsBody"></tbody>
+          </table>
+        </div>
+        <div class="profile-section" style="background:#fff; box-shadow:0 1px 3px rgba(0,0,0,0.06); margin-top:16px;">
+          <h3>Completed jobs missing an invoice</h3>
+          <p class="portal-sub" style="margin:0 0 8px;">These jobs were marked complete but couldn't be auto-priced — usually because they were never linked to a service in the catalog and this customer has no prior job to infer one from. Open the appointment and set a service to invoice it.</p>
+          <table class="data-table">
+            <thead><tr><th>Date</th><th>Customer</th><th>Technician</th><th>Service label</th></tr></thead>
+            <tbody id="missingInvoiceBody"></tbody>
+          </table>
+        </div>
       </section>
 
       <!-- Newsletter -->

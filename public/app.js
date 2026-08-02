@@ -1665,6 +1665,46 @@ async function loadReports() {
     .filter((e) => e.value > 0)
     .sort((a, b) => b.value - a.value);
   renderBars('reportTechBars', techEntries);
+
+  // A cancellation fee is just a draft/sent/paid invoice linked to a cancelled
+  // appointment — completed-job invoices never exist on a cancelled one, so any match
+  // here is the fee (see lib/autoInvoice.js#maybeCreateCancellationFeeInvoice).
+  const cancelled = appointments
+    .filter((a) => a.status === 'cancelled')
+    .sort((a, b) => (b.date + (b.startTime || '')).localeCompare(a.date + (a.startTime || '')));
+  const cancelledBody = document.getElementById('cancelledVisitsBody');
+  cancelledBody.innerHTML = cancelled.length
+    ? cancelled.map((a) => {
+        const feeInvoice = invoices.find((i) => i.appointmentId === a.id);
+        return `
+          <tr>
+            <td>${a.date}${a.startTime ? ' · ' + a.startTime : ''}</td>
+            <td>${a.customerName || 'Unknown'}</td>
+            <td>${a.serviceType || ''}</td>
+            <td>${feeInvoice ? `${money(feeInvoice.amount)} <span class="badge ${feeInvoice.status}">${feeInvoice.status}</span>` : '<span class="portal-hint" style="margin:0;">No fee</span>'}</td>
+          </tr>
+        `;
+      }).join('')
+    : '<tr><td colspan="4" class="empty-state">No cancelled visits.</td></tr>';
+
+  // Completed jobs should always end up with an invoice (see lib/autoInvoice.js) — if
+  // one's missing here, auto-pricing couldn't find a service to bill against (no
+  // service selected on the appointment, and no prior job for this customer to infer
+  // one from). Surfacing these so nothing quietly goes unbilled.
+  const missingInvoice = completed
+    .filter((a) => !invoices.some((i) => i.appointmentId === a.id))
+    .sort((a, b) => (b.date + (b.startTime || '')).localeCompare(a.date + (a.startTime || '')));
+  const missingInvoiceBody = document.getElementById('missingInvoiceBody');
+  missingInvoiceBody.innerHTML = missingInvoice.length
+    ? missingInvoice.map((a) => `
+        <tr>
+          <td>${a.date}${a.startTime ? ' · ' + a.startTime : ''}</td>
+          <td>${a.customerName || 'Unknown'}</td>
+          <td>${a.technicianName || 'Unassigned'}</td>
+          <td>${a.serviceType || ''}</td>
+        </tr>
+      `).join('')
+    : '<tr><td colspan="4" class="empty-state">None — every completed job has an invoice.</td></tr>';
 }
 
 // ---------- Settings (route optimization depot + geocoding) ----------

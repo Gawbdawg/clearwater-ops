@@ -47,6 +47,65 @@
         </div>
       </section>
 
+      <!-- Terms of Service gate — shown once, the first time an owner logs in, before
+           they can reach the dashboard. -->
+      <section id="termsView" class="portal-card hidden" style="max-width:640px;">
+        <h1>Service Agreement &amp; Terms of Service</h1>
+        <p class="portal-sub" style="margin:0 0 12px;">Please review and agree to the terms below before continuing to your account.</p>
+        <div id="termsText" style="max-height:360px; overflow-y:auto; border:1px solid #eef1f2; border-radius:8px; padding:14px 16px; font-size:13px; line-height:1.55; color:#33505c;">
+          <p style="margin:0 0 10px;"><strong>Clear Water Spa Service</strong></p>
+          <p style="margin:0 0 10px;">By requesting, scheduling, or paying for services from Clear Water Spa Service ("Company," "we," "us"), the customer ("Customer," "you") agrees to the following terms:</p>
+
+          <p style="margin:12px 0 4px;"><strong>1. Services</strong></p>
+          <p style="margin:0 0 10px;">Company provides hot tub/spa maintenance and repair services, including but not limited to water testing and chemical balancing, filter cleaning or replacement, equipment inspection, jet and pump servicing, cover maintenance, and general repairs.</p>
+
+          <p style="margin:12px 0 4px;"><strong>2. Assumption of Risk</strong></p>
+          <p style="margin:0 0 10px;">Customer acknowledges that hot tubs and spas involve inherent risks, including electrical hazards, water damage, chemical exposure, mechanical failure, and slip hazards. Customer voluntarily assumes all such risks associated with the ownership, operation, and maintenance of their spa/hot tub.</p>
+
+          <p style="margin:12px 0 4px;"><strong>3. Limitation of Liability</strong></p>
+          <p style="margin:0 0 10px;">To the fullest extent permitted under Oregon law, Company is not liable for any indirect, incidental, consequential, special, or punitive damages arising from Services provided, including property damage, personal injury, loss of use, or water/chemical damage to surrounding structures or landscaping — except to the extent caused by Company's gross negligence or willful misconduct.</p>
+          <p style="margin:0 0 10px;">Company's total liability for any claim arising from the Services shall not exceed the amount Customer paid for the specific service giving rise to the claim.</p>
+
+          <p style="margin:12px 0 4px;"><strong>4. No Warranty on Pre-Existing Conditions</strong></p>
+          <p style="margin:0 0 10px;">Company is not liable for pre-existing damage, defects, or conditions of the spa/hot tub or surrounding structures that were not caused by Company. Customer is responsible for disclosing known issues prior to service.</p>
+
+          <p style="margin:12px 0 4px;"><strong>5. Indemnification</strong></p>
+          <p style="margin:0 0 10px;">Customer agrees to indemnify and hold harmless Company, its owners, employees, and agents from claims, damages, losses, or expenses (including reasonable attorney's fees) arising from Customer's misuse of the spa/hot tub, failure to follow Company's maintenance recommendations, or breach of this Agreement.</p>
+
+          <p style="margin:12px 0 4px;"><strong>6. Third-Party Parts</strong></p>
+          <p style="margin:0 0 10px;">Company is not responsible for defects in parts or components not manufactured by Company. Manufacturer warranties, where applicable, govern those parts instead.</p>
+
+          <p style="margin:12px 0 4px;"><strong>7. Chemical and Water Balance Disclaimer</strong></p>
+          <p style="margin:0 0 10px;">Company uses reasonable industry standards when balancing water chemistry but is not responsible for damage resulting from Customer's alteration of water balance after service, or from pre-existing water quality issues.</p>
+
+          <p style="margin:12px 0 4px;"><strong>8. Cancellation Policy</strong></p>
+          <p style="margin:0 0 10px;">Customer may cancel or reschedule a scheduled service at no charge if notice is given more than 24 hours before the appointment. Cancellations or rescheduling requests made within 24 hours of the scheduled appointment will be charged 50% of the service price.</p>
+
+          <p style="margin:12px 0 4px;"><strong>9. Governing Law</strong></p>
+          <p style="margin:0 0 10px;">This Agreement is governed by the laws of the State of Oregon, without regard to conflict of law principles.</p>
+
+          <p style="margin:12px 0 4px;"><strong>10. Severability</strong></p>
+          <p style="margin:0 0 10px;">If any provision of this Agreement is found unenforceable, the remaining provisions remain in full force and effect.</p>
+
+          <p style="margin:12px 0 4px;"><strong>11. Entire Agreement</strong></p>
+          <p style="margin:0 0 10px;">This Agreement is the entire agreement between the parties regarding the Services and supersedes any prior discussions or agreements, written or oral.</p>
+
+          <p style="margin:12px 0 4px;"><strong>12. Communications</strong></p>
+          <p style="margin:0 0 10px;">By agreeing to this Agreement, Customer also consents to receive occasional email updates from Company (service announcements, seasonal information, and similar communications). Customer may unsubscribe from these updates at any time from their account, without affecting the rest of this Agreement.</p>
+
+          <p style="margin:12px 0 4px;"><strong>Acknowledgment</strong></p>
+          <p style="margin:0;">By signing below, checking "I agree," or proceeding with scheduled service, Customer confirms they have read, understood, and agree to these terms.</p>
+        </div>
+        <label style="flex-direction:row; align-items:center; gap:8px; margin-top:14px;">
+          <input type="checkbox" id="agreeTermsCheckbox" style="width:auto;" />
+          <span>I have read and agree to the Service Agreement &amp; Terms of Service above.</span>
+        </label>
+        <div id="termsError" class="portal-error hidden"></div>
+        <div class="modal-actions" style="padding:0; margin-top:8px;">
+          <button class="btn primary" id="continueAfterTermsBtn">Continue</button>
+        </div>
+      </section>
+
       <!-- Dashboard -->
       <section id="dashView" class="hidden">
         <h1 id="welcomeMsg"></h1>

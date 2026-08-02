@@ -39,6 +39,11 @@ router.post('/', (req, res) => {
     // owner's signed waiver going forward. Admin can flip it off per-owner (or right
     // here at creation), and owners can also unsubscribe themselves from their portal.
     newsletterSubscribed: newsletterSubscribed === undefined ? true : !!newsletterSubscribed,
+    // Every owner has to click through the Terms of Service gate on their first login
+    // (see routes/ownerPortal.js#/agree-to-terms) — including existing owners, since
+    // this field is simply absent/false until they do.
+    agreedToTerms: false,
+    agreedToTermsAt: null,
   });
   res.status(201).json(withPropertyCount(owner));
 });

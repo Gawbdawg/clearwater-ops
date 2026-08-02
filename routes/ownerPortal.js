@@ -6,6 +6,7 @@ const { maybeCreateCheckoutAppointment } = require('../lib/turnoverSchedule');
 const { geocodeAddress } = require('../lib/geocode');
 const { previewFrequencyPricing, maybeCreateCancellationFeeInvoice } = require('../lib/autoInvoice');
 const { generateRecurringSeries } = require('../lib/scheduleFromFrequency');
+const { businessTimeToUtc } = require('../lib/timezone');
 const router = express.Router();
 
 router.use(requireOwnerAuth);
@@ -23,6 +24,26 @@ function myProperty(req, propertyId) {
 router.put('/newsletter-subscription', (req, res) => {
   const updated = store.update('owners', req.session.ownerId, { newsletterSubscribed: !!req.body.subscribed });
   res.json({ newsletterSubscribed: updated.newsletterSubscribed });
+});
+
+// Records that this owner has clicked through the Terms of Service gate shown on
+// first login (see public/owner.js — checkSession() shows that screen instead of the
+// dashboard until this has been recorded). Timestamped for a paper trail alongside
+// any signed waiver collected outside the app. Agreeing also opts them into the
+// newsletter — the agreement itself is the consent to receive updates, same as the
+// signed paper/waiver version covers it, so this isn't a separate opt-in step. They
+// can still unsubscribe afterward any time from their portal, same as anyone else.
+router.post('/agree-to-terms', (req, res) => {
+  const updated = store.update('owners', req.session.ownerId, {
+    agreedToTerms: true,
+    agreedToTermsAt: new Date().toISOString(),
+    newsletterSubscribed: true,
+  });
+  res.json({
+    agreedToTerms: updated.agreedToTerms,
+    agreedToTermsAt: updated.agreedToTermsAt,
+    newsletterSubscribed: updated.newsletterSubscribed,
+  });
 });
 
 // Read-only catalog of upcharges an owner can ask to have included with a service
@@ -215,7 +236,11 @@ router.post('/appointments/:id/cancel', (req, res) => {
   const appt = myUpcomingAppointment(req, req.params.id);
   if (!appt) return res.status(404).json({ error: 'Upcoming visit not found' });
 
-  const visitDateTime = new Date(`${appt.date}T${appt.startTime || '09:00'}:00`);
+  // businessTimeToUtc pins the appointment's date/time to the shop's own timezone
+  // (Pacific) rather than whatever timezone this server process happens to be running
+  // in (UTC on Render) — otherwise this decision can disagree with the browser's
+  // own estimate of "is this within 24 hours," which runs in the owner's local time.
+  const visitDateTime = businessTimeToUtc(appt.date, appt.startTime);
   const hoursUntilVisit = (visitDateTime.getTime() - Date.now()) / (1000 * 60 * 60);
   const withinCancellationWindow = hoursUntilVisit < 24;
 
