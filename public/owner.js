@@ -722,9 +722,15 @@ window.onSvcCalDayClick = (dateStr) => {
   const showPropertyLabel = svcCalPropertyId === 'all' && properties.length > 1;
   const dayAppts = svcCalAppts.filter((a) => a.date === dateStr);
   const dayRequests = svcCalRequests.filter((r) => r.requestedDate === dateStr);
+  const isPast = dateStr < todayStr();
 
+  // Existing visits/requests on this day (if any) are always shown first — but unlike
+  // before, having something already on the calendar no longer blocks requesting more.
+  // An owner with two properties (or a repeat/extra visit at one property) needs to be
+  // able to add a second request on a day that already has a scheduled job.
+  let existingHtml = '';
   if (dayAppts.length) {
-    panel.innerHTML = dayAppts.map((a) => `
+    existingHtml += dayAppts.map((a) => `
       <div style="margin-bottom:10px;">
         <div style="display:flex; justify-content:space-between; gap:8px; align-items:center;">
           <strong>${niceDate(a.date)}</strong>
@@ -736,11 +742,9 @@ window.onSvcCalDayClick = (dateStr) => {
         ${a.status === 'scheduled' ? `<button class="btn small danger" style="margin-top:6px;" onclick="cancelVisit(${a.id}, '${a.date}', '${a.startTime || ''}')">Cancel service</button>` : ''}
       </div>
     `).join('');
-    return;
   }
-
   if (dayRequests.length) {
-    panel.innerHTML = dayRequests.map((r) => `
+    existingHtml += dayRequests.map((r) => `
       <div style="margin-bottom:10px;">
         <div style="display:flex; justify-content:space-between; gap:8px; align-items:center;">
           <strong>${niceDate(r.requestedDate)}</strong>
@@ -751,16 +755,25 @@ window.onSvcCalDayClick = (dateStr) => {
         <button class="btn small danger" style="margin-top:6px;" onclick="cancelSvcCalRequest(${r.id})">Cancel request</button>
       </div>
     `).join('');
-    return;
   }
 
-  if (dateStr < todayStr()) {
-    panel.innerHTML = `<div class="portal-hint" style="margin:0;">${niceDate(dateStr)} has already passed.</div>`;
+  if (isPast) {
+    panel.innerHTML = existingHtml || `<div class="portal-hint" style="margin:0;">${niceDate(dateStr)} has already passed.</div>`;
     return;
   }
 
   svcCalRequestAddonIds = new Set();
   svcCalRequestPropertyId = svcCalPropertyId === 'all' ? properties[0].id : svcCalPropertyId;
+
+  if (existingHtml) {
+    panel.innerHTML = `
+      ${existingHtml}
+      <button class="btn small" id="svcCalShowRequestFormBtn" style="margin-top:4px;">+ Request another service this day</button>
+    `;
+    document.getElementById('svcCalShowRequestFormBtn').addEventListener('click', () => renderSvcCalRequestPanel(dateStr));
+    return;
+  }
+
   renderSvcCalRequestPanel(dateStr);
 };
 
