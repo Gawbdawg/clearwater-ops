@@ -110,6 +110,94 @@ function onPropertyChange() {
   }
   const reqSelect = document.getElementById('requestPropertySelect');
   if (reqSelect) reqSelect.value = String(selectedPropertyId);
+  loadServiceSetup();
+}
+
+// ---- Set up regular service (frequency + price + start date) ----
+let serviceSetupData = null;
+
+const FREQUENCY_LABELS = { weekly: 'Weekly', biweekly: 'Every 2 weeks', every4weeks: 'Every 4 weeks' };
+
+async function loadServiceSetup() {
+  const card = document.getElementById('serviceSetupCard');
+  try {
+    serviceSetupData = await api(`/api/owner/properties/${selectedPropertyId}/service-setup`);
+  } catch (e) {
+    card.classList.add('hidden');
+    return;
+  }
+  if (!serviceSetupData.available) {
+    card.classList.add('hidden');
+    return;
+  }
+  card.classList.remove('hidden');
+  renderServiceSetup();
+}
+
+function renderServiceSetup() {
+  const d = serviceSetupData;
+  const content = document.getElementById('serviceSetupContent');
+
+  if (d.currentFrequency) {
+    const priceLine = d.isCustom
+      ? `$${Number(d.customPrice).toFixed(2)} per visit`
+      : `$${Number(d[d.currentFrequency]).toFixed(2)} per visit`;
+    content.innerHTML = `
+      <h2 style="margin:0 0 4px; font-size:16px;">Your regular service</h2>
+      <p class="portal-sub" style="margin:0;">${FREQUENCY_LABELS[d.currentFrequency] || d.currentFrequency} — ${priceLine}</p>
+      <p class="portal-sub" style="margin:6px 0 0; font-size:12px;">Need to change your schedule? Contact us and we'll take care of it.</p>
+    `;
+    return;
+  }
+
+  const priceFor = (freq) => (d.isCustom ? Number(d.customPrice) : Number(d[freq]));
+  content.innerHTML = `
+    <h2 style="margin:0 0 4px; font-size:16px;">Set up your regular service</h2>
+    <p class="portal-sub" style="margin:0 0 12px;">Pick how often you'd like service and when to start — we'll put the visits right on the calendar.</p>
+    <div id="ssError" class="portal-error hidden"></div>
+    <label>Frequency
+      <select id="ssFrequency">
+        <option value="weekly">Weekly — $${priceFor('weekly').toFixed(2)}/visit</option>
+        <option value="biweekly">Every 2 weeks — $${priceFor('biweekly').toFixed(2)}/visit</option>
+        <option value="every4weeks">Every 4 weeks — $${priceFor('every4weeks').toFixed(2)}/visit</option>
+      </select>
+    </label>
+    <label>Start date<input type="date" id="ssStartDate" value="${todayStr()}" /></label>
+    <button class="btn primary" id="ssSubmitBtn">Set up service</button>
+  `;
+  document.getElementById('ssSubmitBtn').addEventListener('click', saveServiceSetup);
+}
+
+function todayStr() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+async function saveServiceSetup() {
+  const errEl = document.getElementById('ssError');
+  errEl.classList.add('hidden');
+  const frequency = document.getElementById('ssFrequency').value;
+  const startDate = document.getElementById('ssStartDate').value;
+  if (!startDate) {
+    errEl.textContent = 'Please pick a start date.';
+    errEl.classList.remove('hidden');
+    return;
+  }
+  const btn = document.getElementById('ssSubmitBtn');
+  btn.disabled = true;
+  try {
+    await api(`/api/owner/properties/${selectedPropertyId}/schedule-service`, {
+      method: 'POST',
+      body: JSON.stringify({ frequency, startDate }),
+    });
+    await loadServiceSetup();
+    loadVisits();
+    loadOverview();
+  } catch (e) {
+    errEl.textContent = e.message || 'Could not set up service.';
+    errEl.classList.remove('hidden');
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 // ---- Tabs ----

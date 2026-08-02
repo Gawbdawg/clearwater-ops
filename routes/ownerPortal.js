@@ -4,6 +4,8 @@ const { requireOwnerAuth } = require('../lib/auth');
 const { syncCustomerCalendar } = require('../lib/icalSync');
 const { maybeCreateCheckoutAppointment } = require('../lib/turnoverSchedule');
 const { geocodeAddress } = require('../lib/geocode');
+const { previewFrequencyPricing } = require('../lib/autoInvoice');
+const { generateRecurringSeries } = require('../lib/scheduleFromFrequency');
 const router = express.Router();
 
 router.use(requireOwnerAuth);
@@ -66,6 +68,72 @@ router.post('/properties', async (req, res) => {
     ...geo,
   });
   res.status(201).json(property);
+});
+
+// Pricing preview + current frequency for the "set up my regular service" flow —
+// lets an owner see what weekly/biweekly/every-4-weeks actually costs before picking
+// one, without needing to call and ask. Only meaningful for residential properties;
+// vacation rentals get cleaned around guest bookings instead (see /bookings above and
+// lib/turnoverSchedule.js), not on a fixed calendar frequency.
+router.get('/properties/:id/service-setup', (req, res) => {
+  const property = myProperty(req, req.params.id);
+  if (!property) return res.status(404).json({ error: 'Property not found' });
+  if (property.type === 'vacation') {
+    return res.json({ available: false, reason: 'vacation' });
+  }
+  const service = store.getAll('services').find((s) => s.pricingMode === 'frequency');
+  if (!service) {
+    return res.json({ available: false, reason: 'no-service' });
+  }
+  const pricing = previewFrequencyPricing(service, req.session.ownerId);
+  const today = new Date().toISOString().slice(0, 10);
+  const hasUpcoming = store.getAll('appointments')
+    .some((a) => a.customerId === property.id && a.status === 'scheduled' && a.date >= today);
+  res.json({
+    available: true,
+    serviceName: service.name,
+    currentFrequency: property.serviceFrequency || null,
+    hasUpcomingVisits: hasUpcoming,
+    ...pricing,
+  });
+});
+
+// Owner self-service version of the admin's "Schedule recurring visits" action: pick
+// a frequency, see the price (via the endpoint above), pick a start date, and the
+// actual recurring series gets created on the calendar right away — no back-and-forth
+// needed to get set up. Blocks re-running this if the property already has upcoming
+// scheduled visits, so an owner can't accidentally double-book their own calendar by
+// submitting this more than once; changing an already-running schedule goes through
+// the admin instead, since it may need to account for visits already in progress.
+router.post('/properties/:id/schedule-service', (req, res) => {
+  const property = myProperty(req, req.params.id);
+  if (!property) return res.status(404).json({ error: 'Property not found' });
+  if (property.type === 'vacation') {
+    return res.status(400).json({ error: 'Vacation properties are scheduled automatically around your guest bookings instead.' });
+  }
+  const { frequency, startDate } = req.body;
+  if (!['weekly', 'biweekly', 'every4weeks'].includes(frequency)) {
+    return res.status(400).json({ error: 'Choose a valid frequency.' });
+  }
+  if (!startDate) {
+    return res.status(400).json({ error: 'Pick a start date.' });
+  }
+  const today = new Date().toISOString().slice(0, 10);
+  const hasUpcoming = store.getAll('appointments')
+    .some((a) => a.customerId === property.id && a.status === 'scheduled' && a.date >= today);
+  if (hasUpcoming) {
+    return res.status(400).json({ error: 'This property already has upcoming visits scheduled — contact us if you need to change your schedule.' });
+  }
+  const service = store.getAll('services').find((s) => s.pricingMode === 'frequency');
+  store.update('customers', property.id, { serviceFrequency: frequency });
+  const updated = store.getById('customers', property.id);
+  const result = generateRecurringSeries(updated, {
+    startDate,
+    startTime: '09:00',
+    technicianId: null,
+    serviceId: service ? service.id : null,
+  });
+  res.status(201).json(result);
 });
 
 // Read-only view of scheduled/completed service visits across all of this owner's
