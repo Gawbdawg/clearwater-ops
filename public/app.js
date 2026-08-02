@@ -1860,14 +1860,16 @@ document.getElementById('bulkContactBtn').addEventListener('click', openBulkCont
 function openBulkLinkOwnersModal() {
   const html = `
     <p class="portal-sub" style="margin:0 0 4px;">
-      One line per property/customer: <code>CustomerName: OwnerName, Phone</code> — creates
-      the owner account if it doesn't exist yet (no password set, so nobody can log in
-      until you add one), creates the property/customer too if it doesn't exist yet
-      (as a vacation rental), and links them. If the same owner name appears on more than
-      one line, all those properties get linked to the same one account. Never changes a
-      customer that's already linked to a different owner.
+      One line per property/customer: <code>CustomerName: OwnerName, value, value</code> —
+      each value can be a phone number or an email, in any order. Creates the owner
+      account if it doesn't exist yet (no password set, so nobody can log in until you
+      add one), creates the property/customer too if it doesn't exist yet (as a
+      vacation rental), and links them. If a property is already linked to an owner,
+      this fills in any phone/email that owner is still missing instead of skipping it
+      — but never overwrites contact info already on file, and never changes which
+      owner a property is linked to.
     </p>
-    <textarea id="bulkLinkOwnersText" rows="14" style="width:100%; font-family:monospace; font-size:12px;" placeholder="Sea Salt Forest: Sam, (503) 481-1333"></textarea>
+    <textarea id="bulkLinkOwnersText" rows="14" style="width:100%; font-family:monospace; font-size:12px;" placeholder="Sea Salt Forest: Sam, (503) 481-1333, sam@example.com"></textarea>
     <div id="bulkLinkOwnersResult"></div>
     <div class="modal-actions">
       <button class="btn" onclick="closeModal()">Close</button>
@@ -1883,16 +1885,16 @@ function openBulkLinkOwnersModal() {
     btn.textContent = 'Linking…';
     try {
       const result = await api('/api/owners/bulk-link-from-text', { method: 'POST', body: JSON.stringify({ text }) });
-      let html2 = `<div class="portal-hint" style="margin:10px 0;">Linked ${result.linkedCount} customer(s) (${result.ownersCreated} new owner account(s), ${result.customersCreated} new propert${result.customersCreated === 1 ? 'y' : 'ies'} created).${result.alreadyLinked.length ? ` ${result.alreadyLinked.length} already linked.` : ''}</div>`;
+      let html2 = `<div class="portal-hint" style="margin:10px 0;">Linked ${result.linkedCount} customer(s) (${result.ownersCreated} new owner account(s), ${result.customersCreated} new propert${result.customersCreated === 1 ? 'y' : 'ies'} created).${result.enrichedCount ? ` ${result.enrichedCount} existing owner(s) got contact info filled in.` : ''}${result.alreadyLinked.length ? ` ${result.alreadyLinked.length} already complete.` : ''}</div>`;
       if (result.created.length) {
         html2 += `<div style="max-height:140px; overflow-y:auto; font-size:12px; background:#f4f9fa; border-radius:6px; padding:8px; margin-bottom:8px;">${result.created.join('<br>')}</div>`;
       }
       if (result.linked.length) {
         html2 += `<div style="max-height:140px; overflow-y:auto; font-size:12px; background:#f4f9fa; border-radius:6px; padding:8px; margin-bottom:8px;">${result.linked.join('<br>')}</div>`;
       }
-      if (result.conflicts.length) {
-        html2 += `<div class="portal-hint" style="margin:0 0 4px; font-weight:600;">Conflicts (left unchanged):</div>
-          <div style="max-height:140px; overflow-y:auto; font-size:12px; background:#fef6f5; border-radius:6px; padding:8px; margin-bottom:8px;">${result.conflicts.join('<br>')}</div>`;
+      if (result.enriched.length) {
+        html2 += `<div class="portal-hint" style="margin:0 0 4px; font-weight:600;">Enriched existing owners:</div>
+          <div style="max-height:140px; overflow-y:auto; font-size:12px; background:#f4f9fa; border-radius:6px; padding:8px; margin-bottom:8px;">${result.enriched.join('<br>')}</div>`;
       }
       if (result.skippedLines.length) {
         html2 += `<div class="portal-hint" style="margin:8px 0 0;">${result.skippedLines.length} line(s) didn't match the expected format and were skipped.</div>`;

@@ -145,19 +145,28 @@ router.post('/bulk-create-from-customers', (req, res) => {
   });
 });
 
+const EMAIL_RE = /.+@.+\..+/;
+
 // Bulk-links owners to customers/properties from pasted text — one line per pairing in
-// the form "CustomerName: OwnerName, Phone". The customer/property side is matched the
-// same conservative way as the other bulk-paste tools (bulk appointment import, bulk
-// contact-info update) — anything ambiguous (more than one possible match) is skipped
-// and reported back rather than guessed at. If a name doesn't match any existing
-// customer at all, a new one is created (type "vacation," since that's what having an
-// owner account is normally for) rather than just reporting a miss — this is the same
-// tool that would otherwise force a separate manual "Add customer" step for every new
-// property. The owner side is matched by exact name (case-insensitive) so the same
-// owner mentioned on multiple lines (e.g. one person who owns two properties) only gets
-// created once and both properties get linked to it. Never overwrites a customer that's
-// already linked to a DIFFERENT owner — that's reported back as a conflict instead of
-// silently changed.
+// the form "CustomerName: OwnerName, value1, value2" where each value can be a phone
+// number or an email (detected automatically, order doesn't matter). The customer/
+// property side is matched the same conservative way as the other bulk-paste tools
+// (bulk appointment import, bulk contact-info update) — anything ambiguous (more than
+// one possible match) is skipped and reported back rather than guessed at. If a name
+// doesn't match any existing customer at all, a new one is created (type "vacation,"
+// since that's what having an owner account is normally for) rather than just
+// reporting a miss — this is the same tool that would otherwise force a separate
+// manual "Add customer" step for every new property. The owner side is matched by
+// exact name (case-insensitive) so the same owner mentioned on multiple lines (e.g.
+// one person who owns two properties) only gets created once and both properties get
+// linked to it.
+//
+// If a property is already linked to an owner, this never re-links it or changes
+// which owner it belongs to — but it DOES fill in any phone/email that owner is
+// still missing from the new line's data, regardless of whether the name on this line
+// matches exactly what the owner is saved as (e.g. "Chad" vs a fuller "Chad Ruhoff"
+// from a different contact list — same person, same property, so still safe to
+// enrich). Only ever fills blanks, never overwrites a phone/email already on file.
 router.post('/bulk-link-from-text', (req, res) => {
   const { text } = req.body;
   if (!text || !text.trim()) return res.status(400).json({ error: 'No text provided' });
@@ -169,8 +178,8 @@ router.post('/bulk-link-from-text', (req, res) => {
 
   const linked = [];
   const created = [];
+  const enriched = [];
   const alreadyLinked = [];
-  const conflicts = [];
   const skippedLines = [];
   let ownersCreated = 0;
 
@@ -181,9 +190,11 @@ router.post('/bulk-link-from-text', (req, res) => {
     if (colonIdx === -1) { skippedLines.push(line); return; }
     const customerName = line.slice(0, colonIdx).trim();
     const rest = line.slice(colonIdx + 1).trim();
-    const commaIdx = rest.indexOf(',');
-    const ownerName = (commaIdx === -1 ? rest : rest.slice(0, commaIdx)).trim();
-    const phone = (commaIdx === -1 ? '' : rest.slice(commaIdx + 1).trim());
+    const parts = rest.split(',').map((p) => p.trim()).filter(Boolean);
+    const ownerName = parts[0] || '';
+    const values = parts.slice(1);
+    const email = values.find((v) => EMAIL_RE.test(v)) || '';
+    const phone = values.find((v) => v && !EMAIL_RE.test(v)) || '';
     if (!customerName || !ownerName) { skippedLines.push(line); return; }
 
     let customer = findCustomer(customerName);
@@ -197,10 +208,16 @@ router.post('/bulk-link-from-text', (req, res) => {
 
     if (customer.ownerId) {
       const existingOwner = store.getById('owners', customer.ownerId);
-      if (existingOwner && existingOwner.name.trim().toLowerCase() === ownerName.trim().toLowerCase()) {
-        alreadyLinked.push(`${customer.name} (already linked to ${existingOwner.name})`);
+      if (!existingOwner) { alreadyLinked.push(`${customer.name} (linked owner account no longer exists)`); return; }
+      const fill = {};
+      if (phone && !existingOwner.phone) fill.phone = phone;
+      if (email && !existingOwner.email) fill.email = email;
+      if (Object.keys(fill).length > 0) {
+        const updated = store.update('owners', existingOwner.id, fill);
+        owners = owners.map((o) => (o.id === updated.id ? updated : o));
+        enriched.push(`${customer.name} -> ${existingOwner.name}: added ${Object.keys(fill).join(' & ')}`);
       } else {
-        conflicts.push(`${customer.name} is already linked to a different owner (${existingOwner ? existingOwner.name : 'unknown'}) — left unchanged`);
+        alreadyLinked.push(`${customer.name} (already linked to ${existingOwner.name})`);
       }
       return;
     }
@@ -209,18 +226,23 @@ router.post('/bulk-link-from-text', (req, res) => {
     if (!owner) {
       owner = store.create('owners', {
         name: ownerName,
-        email: '',
+        email: email || '',
         phone: phone || '',
         username: '',
         passwordHash: '',
       });
       owners = [...owners, owner];
       ownersCreated += 1;
-    } else if (phone && !owner.phone) {
-      // Fill in a phone number we now have for an owner that didn't have one yet —
-      // never overwrites a phone number that's already on file.
-      owner = store.update('owners', owner.id, { phone });
-      owners = owners.map((o) => (o.id === owner.id ? owner : o));
+    } else {
+      // Fill in contact info we now have for an owner that didn't have it yet —
+      // never overwrites anything already on file.
+      const fill = {};
+      if (phone && !owner.phone) fill.phone = phone;
+      if (email && !owner.email) fill.email = email;
+      if (Object.keys(fill).length > 0) {
+        owner = store.update('owners', owner.id, fill);
+        owners = owners.map((o) => (o.id === owner.id ? owner : o));
+      }
     }
 
     store.update('customers', customer.id, { ownerId: owner.id });
@@ -234,11 +256,12 @@ router.post('/bulk-link-from-text', (req, res) => {
   res.json({
     linked,
     created,
+    enriched,
     linkedCount: linked.length + created.length,
     customersCreated: created.length,
     ownersCreated,
+    enrichedCount: enriched.length,
     alreadyLinked,
-    conflicts,
     skippedLines,
   });
 });
