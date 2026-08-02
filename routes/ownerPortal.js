@@ -54,10 +54,40 @@ router.get('/appointments', (req, res) => {
         status: a.status,
         serviceType: a.serviceType,
         propertyName: property ? property.name : 'Unknown property',
+        addons: a.addons || [],
       };
     })
     .sort((a, b) => (a.date + a.startTime).localeCompare(b.date + b.startTime));
   res.json(enriched);
+});
+
+// Only appointments on one of this owner's own properties, and only while the visit
+// is still upcoming (not yet completed), can have extras added or removed.
+function myUpcomingAppointment(req, apptId) {
+  const appt = store.getById('appointments', apptId);
+  if (!appt || !myProperty(req, appt.customerId)) return null;
+  if (appt.status !== 'scheduled') return null;
+  return appt;
+}
+
+router.post('/appointments/:id/addons', (req, res) => {
+  const appt = myUpcomingAppointment(req, req.params.id);
+  if (!appt) return res.status(404).json({ error: 'Upcoming visit not found' });
+  const addon = store.getById('addons', req.body.addonId);
+  if (!addon) return res.status(404).json({ error: 'Upcharge not found' });
+  const existing = appt.addons || [];
+  if (existing.some((a) => a.id === addon.id)) return res.json({ addons: existing });
+  const addons = [...existing, { id: addon.id, name: addon.name, price: addon.price }];
+  const updated = store.update('appointments', req.params.id, { addons });
+  res.json({ addons: updated.addons });
+});
+
+router.delete('/appointments/:id/addons/:addonId', (req, res) => {
+  const appt = myUpcomingAppointment(req, req.params.id);
+  if (!appt) return res.status(404).json({ error: 'Upcoming visit not found' });
+  const addons = (appt.addons || []).filter((a) => String(a.id) !== req.params.addonId);
+  const updated = store.update('appointments', req.params.id, { addons });
+  res.json({ addons: updated.addons });
 });
 
 // ---- Occupied / guest-booking date ranges (scoped to one of this owner's properties) ----

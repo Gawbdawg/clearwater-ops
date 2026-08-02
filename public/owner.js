@@ -213,16 +213,49 @@ async function loadVisits() {
   }
   const today = new Date().toISOString().slice(0, 10);
   el.innerHTML = visits.map((v) => `
-    <div class="owner-list-item">
-      <div>
+    <div class="owner-list-item" style="align-items:flex-start; flex-direction:column;">
+      <div style="width:100%;">
         <strong>${niceDate(v.date)}${v.startTime ? ' · ' + v.startTime : ''}</strong>
         ${properties.length > 1 ? `<span class="job-meta">${v.propertyName}</span>` : ''}
         <span class="badge ${v.status === 'completed' ? 'completed' : v.date < today ? 'draft' : 'scheduled'}">${v.status}</span>
         ${v.serviceType ? `<div class="job-meta">${v.serviceType}</div>` : ''}
       </div>
+      ${v.status === 'scheduled' ? renderVisitAddons(v) : (v.addons && v.addons.length ? `<div class="job-meta">Extras: ${v.addons.map((a) => `${a.name} ($${Number(a.price).toFixed(2)})`).join(', ')}</div>` : '')}
     </div>
   `).join('');
 }
+
+function renderVisitAddons(v) {
+  const attached = v.addons || [];
+  const attachedIds = attached.map((a) => a.id);
+  const total = attached.reduce((sum, a) => sum + (Number(a.price) || 0), 0);
+  if (addonsCatalog.length === 0) return '';
+  return `
+    <div class="job-addons" style="width:100%; margin-top:8px;">
+      <div class="job-meta" style="margin-bottom:4px;">Add extras to this visit${total ? ` — +$${total.toFixed(2)} added` : ''}</div>
+      <div class="job-addon-chips">
+        ${addonsCatalog.map((a) => `
+          <button type="button" class="addon-chip ${attachedIds.includes(a.id) ? 'added' : ''}" onclick="toggleVisitAddon(${v.id}, ${a.id}, ${attachedIds.includes(a.id)})">
+            ${attachedIds.includes(a.id) ? '✓ ' : '+ '}${a.name} ($${Number(a.price).toFixed(2)})
+          </button>
+        `).join('')}
+      </div>
+    </div>
+  `;
+}
+
+window.toggleVisitAddon = async (apptId, addonId, currentlyAttached) => {
+  try {
+    if (currentlyAttached) {
+      await api(`/api/owner/appointments/${apptId}/addons/${addonId}`, { method: 'DELETE' });
+    } else {
+      await api(`/api/owner/appointments/${apptId}/addons`, { method: 'POST', body: JSON.stringify({ addonId }) });
+    }
+    await loadVisits();
+  } catch (e) {
+    alert(e.message || 'Could not update extras');
+  }
+};
 
 async function loadRequests() {
   const requests = await api('/api/owner/service-requests');
