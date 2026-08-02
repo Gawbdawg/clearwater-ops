@@ -948,13 +948,14 @@ function techOptions(selectedId) {
   return '<option value="">Unassigned</option>' + state.technicians.map((t) => `<option value="${t.id}" ${t.id === selectedId ? 'selected' : ''}>${t.name}</option>`).join('');
 }
 
-function apptForm(a = {}, opts = {}) {
+function apptForm(a = {}) {
   const isNew = !a.id;
-  // Scheduling straight from an owner's service request doesn't need exact start/end
-  // times picked — the request itself was just "please come this day." Times still get
-  // saved (defaulted to a placeholder) so route ordering and the schedule/day views keep
-  // working the same as any other appointment; the fields are just not shown here.
-  const hideTime = !!opts.hideTime;
+  // No manual start/end time entry, anywhere — stop order for the day comes from the
+  // route optimizer (nearest-neighbor from the shop, by address), not a clock time
+  // someone has to invent when booking. A placeholder start time is still saved behind
+  // the scenes (existing value when editing, 09:00 default when new) purely so older
+  // sort-by-time fallback code and the day view keep working when a stop has no
+  // coordinates yet to route by.
   return `
     <label>Customer
       <select id="f_customerId" ${isNew ? 'onchange="onApptCustomerChange()"' : ''}>${customerOptions(a.customerId)}</select>
@@ -963,8 +964,8 @@ function apptForm(a = {}, opts = {}) {
       <select id="f_technicianId">${techOptions(a.technicianId)}</select>
     </label>
     <label>Date<input type="date" id="f_date" value="${a.date || todayStr()}" /></label>
-    <label style="${hideTime ? 'display:none;' : ''}">Start time<input type="time" id="f_startTime" value="${a.startTime || (hideTime ? '09:00' : '')}" /></label>
-    <label style="${hideTime ? 'display:none;' : ''}">End time<input type="time" id="f_endTime" value="${a.endTime || ''}" /></label>
+    <input type="hidden" id="f_startTime" value="${a.startTime || '09:00'}" />
+    <input type="hidden" id="f_endTime" value="${a.endTime || ''}" />
     <label>Service (optional — picks a price for auto-invoicing)
       <select id="f_serviceId" onchange="onApptServiceChange()">
         <option value="">Custom / none</option>
@@ -1561,7 +1562,7 @@ window.scheduleRequest = async (requestId, customerId, requestedDate) => {
   if (state.services.length === 0) state.services = await api('/api/services');
   if (state.addons.length === 0) state.addons = await api('/api/addons');
   const request = state.serviceRequests.find((r) => r.id === requestId);
-  openModal('New Appointment', apptForm({ customerId, date: requestedDate, addons: request ? request.addons : [] }, { hideTime: true }));
+  openModal('New Appointment', apptForm({ customerId, date: requestedDate, addons: request ? request.addons : [] }));
   onApptCustomerChange();
   document.getElementById('saveApptBtn').addEventListener('click', async () => {
     try {

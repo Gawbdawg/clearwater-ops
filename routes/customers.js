@@ -3,7 +3,7 @@ const store = require('../lib/store');
 const { hashPassword, sanitizeCustomer } = require('../lib/auth');
 const { geocodeAddress } = require('../lib/geocode');
 const { makeCustomerMatcher } = require('../lib/customerMatch');
-const { futureDates } = require('../lib/recurrence');
+const { generateRecurringSeries } = require('../lib/scheduleFromFrequency');
 const router = express.Router();
 
 // Creates a brand-new owner account and returns its id — used when an admin links
@@ -263,30 +263,8 @@ router.post('/:id/schedule-recurring', (req, res) => {
     return res.status(400).json({ error: 'startDate and startTime are required' });
   }
 
-  const service = serviceId ? store.getById('services', serviceId) : null;
-  const base = {
-    customerId: customer.id,
-    technicianId: technicianId ? Number(technicianId) : null,
-    startTime,
-    endTime: '',
-    serviceId: service ? service.id : null,
-    serviceType: service ? service.name : 'General service',
-    status: 'scheduled',
-    notes: '',
-    chlorine: '',
-    ph: '',
-    alkalinity: '',
-    addons: [],
-  };
-
-  const first = store.create('appointments', { ...base, date: startDate, seriesId: null });
-  store.update('appointments', first.id, { seriesId: first.id });
-  const dates = futureDates(startDate, customer.serviceFrequency, null, customer.customFrequencyDays);
-  dates.forEach((d) => {
-    store.create('appointments', { ...base, date: d, seriesId: first.id, status: 'scheduled' });
-  });
-
-  res.status(201).json({ created: dates.length + 1, firstAppointmentId: first.id });
+  const result = generateRecurringSeries(customer, { startDate, startTime, technicianId, serviceId });
+  res.status(201).json(result);
 });
 
 module.exports = router;
