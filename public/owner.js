@@ -18,6 +18,13 @@ let properties = [];
 let selectedPropertyId = null;
 let addonsCatalog = [];
 let selectedAddonIds = new Set();
+// Set right before a checkSession()/showDash() refresh triggered by adding or editing a
+// property, so the dashboard re-selects THAT property afterward instead of always
+// falling back to properties[0] — see showDash below. Without this, adding a second
+// property (or editing an existing one to type:'vacation') silently left whichever
+// property was already selected in place, so the Booking calendar tab (and the iCal
+// field on it) never appeared for the property the owner actually just changed.
+let pendingSelectPropertyId = null;
 
 function showError(msg) {
   loginError.textContent = msg;
@@ -139,7 +146,14 @@ async function showDash(owner) {
   const reqSelect = document.getElementById('requestPropertySelect');
   reqSelect.innerHTML = properties.map((p) => `<option value="${p.id}">${p.name}</option>`).join('');
 
-  selectedPropertyId = properties[0].id;
+  if (pendingSelectPropertyId && properties.some((p) => p.id === pendingSelectPropertyId)) {
+    selectedPropertyId = pendingSelectPropertyId;
+  } else if (!properties.some((p) => p.id === selectedPropertyId)) {
+    selectedPropertyId = properties[0].id;
+  }
+  pendingSelectPropertyId = null;
+  const switcherSelect = document.getElementById('propertySelect');
+  if (switcherSelect) switcherSelect.value = String(selectedPropertyId);
   onPropertyChange();
   loadVisits();
   loadRequests();
@@ -157,11 +171,65 @@ function onPropertyChange() {
     updateSyncStatus(p);
     loadBookings();
   }
+  renderPropertyDetails(p);
   const reqSelect = document.getElementById('requestPropertySelect');
   if (reqSelect) reqSelect.value = String(selectedPropertyId);
   loadServiceSetup();
   loadOwnerCalendar();
 }
+
+// ---- Edit property (name/address/type) ----
+// The type field matters beyond labeling: the Booking calendar tab (and the iCal link
+// field on it — see saveIcalBtn below) only shows up for type:'vacation' properties, so
+// this is also how an owner switches a property to vacation after the fact if they added
+// it as residential (or the reverse).
+function renderPropertyDetails(p) {
+  document.getElementById('propertyDetailsName').textContent = p.name;
+  document.getElementById('propertyDetailsMeta').textContent =
+    `${p.type === 'vacation' ? 'Vacation rental' : 'Residential'}${p.address ? ' · ' + p.address : ''}`;
+  document.getElementById('editPropertyForm').classList.add('hidden');
+  document.getElementById('propertyDetailsView').classList.remove('hidden');
+  document.getElementById('editPropertyError').classList.add('hidden');
+}
+
+document.getElementById('editPropertyBtn').addEventListener('click', () => {
+  const p = selectedProperty();
+  document.getElementById('epName').value = p.name || '';
+  document.getElementById('epAddress').value = p.address || '';
+  document.getElementById('epType').value = p.type === 'vacation' ? 'vacation' : 'residential';
+  document.getElementById('editPropertyError').classList.add('hidden');
+  document.getElementById('propertyDetailsView').classList.add('hidden');
+  document.getElementById('editPropertyForm').classList.remove('hidden');
+});
+
+document.getElementById('cancelEditPropertyBtn').addEventListener('click', () => {
+  renderPropertyDetails(selectedProperty());
+});
+
+document.getElementById('saveEditPropertyBtn').addEventListener('click', async () => {
+  const errEl = document.getElementById('editPropertyError');
+  errEl.classList.add('hidden');
+  const name = document.getElementById('epName').value.trim();
+  if (!name) {
+    errEl.textContent = 'Please enter a property name.';
+    errEl.classList.remove('hidden');
+    return;
+  }
+  const address = document.getElementById('epAddress').value.trim();
+  const type = document.getElementById('epType').value;
+  const btn = document.getElementById('saveEditPropertyBtn');
+  btn.disabled = true;
+  try {
+    await api(`/api/owner/properties/${selectedPropertyId}`, { method: 'PUT', body: JSON.stringify({ name, address, type }) });
+    pendingSelectPropertyId = selectedPropertyId;
+    await checkSession();
+  } catch (e) {
+    errEl.textContent = e.message || 'Could not save that property.';
+    errEl.classList.remove('hidden');
+  } finally {
+    btn.disabled = false;
+  }
+});
 
 // ---- Set up regular service (frequency + price + start date) ----
 let serviceSetupData = null;
@@ -993,10 +1061,14 @@ document.getElementById('saveNewPropertyBtn').addEventListener('click', async ()
   const btn = document.getElementById('saveNewPropertyBtn');
   btn.disabled = true;
   try {
-    await api('/api/owner/properties', { method: 'POST', body: JSON.stringify({ name, address, type }) });
+    const created = await api('/api/owner/properties', { method: 'POST', body: JSON.stringify({ name, address, type }) });
     document.getElementById('apName').value = '';
     document.getElementById('apAddress').value = '';
     document.getElementById('apType').value = 'residential';
+    // Select the property just created (rather than always defaulting to properties[0])
+    // so a newly-added vacation property's Booking calendar tab — and the iCal field on
+    // it — shows up immediately, with no extra manual switch required.
+    pendingSelectPropertyId = created.id;
     await checkSession();
   } catch (e) {
     errEl.textContent = e.message || 'Could not save that property.';

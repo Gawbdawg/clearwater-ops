@@ -99,6 +99,43 @@ router.post('/properties', async (req, res) => {
   res.status(201).json(property);
 });
 
+// Lets an owner fix up a property's own name/address/type after the fact — added
+// because there used to be no way to edit a property once created, only add new ones.
+// That mattered in practice for exactly the type field: an owner who added a property
+// as "Residential" by mistake (or whose vacation rental needs were only clear later)
+// had no way to switch it to "Vacation rental" themselves — and since the iCal/booking
+// calendar tab only appears for type:'vacation' properties (see onPropertyChange in
+// public/owner.js), that also meant no way to ever paste in their iCal link, since the
+// tab that holds that field was permanently hidden for that property.
+// Re-geocodes the address the same best-effort way property creation does, only if the
+// address text actually changed (an unrelated name/type edit shouldn't re-run it).
+router.put('/properties/:id', async (req, res) => {
+  const property = myProperty(req, req.params.id);
+  if (!property) return res.status(404).json({ error: 'Property not found' });
+  const { name, address, type } = req.body;
+  if (!name || !name.trim()) return res.status(400).json({ error: 'A property name is required' });
+
+  const updates = {
+    name: name.trim(),
+    address: address ? address.trim() : '',
+    type: type === 'vacation' ? 'vacation' : 'residential',
+  };
+
+  if (updates.address && updates.address !== (property.address || '')) {
+    try {
+      const { lat, lng, displayName } = await geocodeAddress(updates.address);
+      Object.assign(updates, { lat, lng, geocodedAddress: displayName, addressVerified: true });
+    } catch (err) {
+      Object.assign(updates, { lat: null, lng: null, geocodedAddress: '', addressVerified: false });
+    }
+  } else if (!updates.address) {
+    Object.assign(updates, { lat: null, lng: null, geocodedAddress: '', addressVerified: false });
+  }
+
+  const updated = store.update('customers', property.id, updates);
+  res.json(updated);
+});
+
 // Pricing preview + current frequency for the "set up my regular service" flow —
 // lets an owner see what weekly/biweekly/every-4-weeks actually costs before picking
 // one, without needing to call and ask. Only meaningful for residential properties;

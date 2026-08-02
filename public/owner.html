@@ -144,6 +144,32 @@
         <div id="tab-overview" class="owner-tab-panel">
           <div class="owner-summary-grid" id="overviewSummary"></div>
 
+          <div class="portal-card" style="max-width:none; margin:16px 0 0;">
+            <div id="propertyDetailsView" style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px;">
+              <div>
+                <div style="font-size:14px; font-weight:600;" id="propertyDetailsName"></div>
+                <div class="portal-sub" style="margin:0;" id="propertyDetailsMeta"></div>
+              </div>
+              <button class="btn small" id="editPropertyBtn">Edit property</button>
+            </div>
+            <div id="editPropertyForm" class="hidden" style="margin-top:10px;">
+              <div id="editPropertyError" class="portal-error hidden"></div>
+              <label>Property name<input type="text" id="epName" /></label>
+              <label>Address <span style="font-weight:400; color:#7a8f97;">(so we can find it)</span><input type="text" id="epAddress" /></label>
+              <label>Type
+                <select id="epType">
+                  <option value="residential">Residential — regular recurring service</option>
+                  <option value="vacation">Vacation rental — cleaned between guest bookings</option>
+                </select>
+              </label>
+              <p class="portal-sub" style="margin:0 0 8px;">Switching to "Vacation rental" adds a Booking calendar tab where you can paste your iCal export link.</p>
+              <div style="display:flex; gap:8px;">
+                <button class="btn primary" id="saveEditPropertyBtn">Save changes</button>
+                <button class="btn small" id="cancelEditPropertyBtn">Cancel</button>
+              </div>
+            </div>
+          </div>
+
           <div id="serviceSetupCard" class="portal-card hidden" style="max-width:none; margin:20px 0 0;">
             <div id="serviceSetupContent"></div>
           </div>
