@@ -948,8 +948,13 @@ function techOptions(selectedId) {
   return '<option value="">Unassigned</option>' + state.technicians.map((t) => `<option value="${t.id}" ${t.id === selectedId ? 'selected' : ''}>${t.name}</option>`).join('');
 }
 
-function apptForm(a = {}) {
+function apptForm(a = {}, opts = {}) {
   const isNew = !a.id;
+  // Scheduling straight from an owner's service request doesn't need exact start/end
+  // times picked — the request itself was just "please come this day." Times still get
+  // saved (defaulted to a placeholder) so route ordering and the schedule/day views keep
+  // working the same as any other appointment; the fields are just not shown here.
+  const hideTime = !!opts.hideTime;
   return `
     <label>Customer
       <select id="f_customerId" ${isNew ? 'onchange="onApptCustomerChange()"' : ''}>${customerOptions(a.customerId)}</select>
@@ -958,8 +963,8 @@ function apptForm(a = {}) {
       <select id="f_technicianId">${techOptions(a.technicianId)}</select>
     </label>
     <label>Date<input type="date" id="f_date" value="${a.date || todayStr()}" /></label>
-    <label>Start time<input type="time" id="f_startTime" value="${a.startTime || ''}" /></label>
-    <label>End time<input type="time" id="f_endTime" value="${a.endTime || ''}" /></label>
+    <label style="${hideTime ? 'display:none;' : ''}">Start time<input type="time" id="f_startTime" value="${a.startTime || (hideTime ? '09:00' : '')}" /></label>
+    <label style="${hideTime ? 'display:none;' : ''}">End time<input type="time" id="f_endTime" value="${a.endTime || ''}" /></label>
     <label>Service (optional — picks a price for auto-invoicing)
       <select id="f_serviceId" onchange="onApptServiceChange()">
         <option value="">Custom / none</option>
@@ -1556,7 +1561,7 @@ window.scheduleRequest = async (requestId, customerId, requestedDate) => {
   if (state.services.length === 0) state.services = await api('/api/services');
   if (state.addons.length === 0) state.addons = await api('/api/addons');
   const request = state.serviceRequests.find((r) => r.id === requestId);
-  openModal('New Appointment', apptForm({ customerId, date: requestedDate, addons: request ? request.addons : [] }));
+  openModal('New Appointment', apptForm({ customerId, date: requestedDate, addons: request ? request.addons : [] }, { hideTime: true }));
   onApptCustomerChange();
   document.getElementById('saveApptBtn').addEventListener('click', async () => {
     try {
