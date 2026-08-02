@@ -53,7 +53,7 @@
         </button>
         <button class="tab-btn" data-tab="customers">
           <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
-          Customers
+          Homes
         </button>
         <button class="tab-btn" data-tab="owners">
           <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
@@ -132,11 +132,11 @@
         <div class="cal-grid" id="calGrid"></div>
       </section>
 
-      <!-- Customers -->
+      <!-- Homes -->
       <section id="tab-customers" class="tab-panel">
         <div class="panel-header">
-          <h1>Customers</h1>
-          <button class="btn primary" id="newCustomerBtn">+ New Customer</button>
+          <h1>Homes</h1>
+          <button class="btn primary" id="newCustomerBtn">+ New Home</button>
         </div>
         <div class="filter-row">
           <label>Type
@@ -148,14 +148,14 @@
           </label>
           <input type="text" id="customerSearch" placeholder="Search name or address…" />
         </div>
-        <p class="portal-hint">Each customer is a property. Link a property to an Owner account below to give them portal access at <code id="ownerPortalLink"></code> — one owner account can have several properties linked to it.</p>
+        <p class="portal-hint">Each home is a property. Link a home to an Owner account below to give them portal access at <code id="ownerPortalLink"></code> — one owner account can have several homes linked to it.</p>
         <table class="data-table" id="customerTable">
           <thead><tr><th>Name</th><th>Type</th><th>Phone</th><th>Email</th><th>Address</th><th>Equipment</th><th>Notes</th><th>Owner</th><th></th></tr></thead>
           <tbody></tbody>
         </table>
       </section>
 
-      <!-- Owners (portal login accounts, can have multiple properties) -->
+      <!-- Owners (portal login accounts, can have multiple homes) -->
       <section id="tab-owners" class="tab-panel">
         <div class="panel-header">
           <h1>Owners</h1>
@@ -164,7 +164,7 @@
             <button class="btn primary" id="newOwnerBtn">+ New Owner</button>
           </div>
         </div>
-        <p class="portal-hint">Owner accounts log into <code id="ownerPortalLink2"></code>. Link properties to an owner from the Customers tab — one owner can have several properties. "Auto-link owner accounts" creates one for every customer that doesn't have one yet (grouping by matching email/phone), with no password set until you add one.</p>
+        <p class="portal-hint">Owner accounts log into <code id="ownerPortalLink2"></code>. Link homes to an owner from the Homes tab — one owner can have several homes. "Auto-link owner accounts" creates one for every home that doesn't have one yet (grouping by matching email/phone), with no password set until you add one.</p>
         <table class="data-table" id="ownerTable">
           <thead><tr><th>Name</th><th>Phone</th><th>Email</th><th>Username</th><th>Properties</th><th>Billing</th><th>Login set up?</th><th></th></tr></thead>
           <tbody></tbody>
@@ -204,7 +204,7 @@
           </label>
         </div>
         <table class="data-table" id="invoiceTable">
-          <thead><tr><th>Customer</th><th>Amount</th><th>Issued</th><th>Due</th><th>Status</th><th></th></tr></thead>
+          <thead><tr><th>Home</th><th>Amount</th><th>Issued</th><th>Due</th><th>Status</th><th></th></tr></thead>
           <tbody></tbody>
         </table>
       </section>
@@ -284,7 +284,7 @@
         <div class="profile-section" style="background:#fff; box-shadow:0 1px 3px rgba(0,0,0,0.06); margin-top:16px;">
           <h3>Cancelled visits</h3>
           <table class="data-table">
-            <thead><tr><th>Date</th><th>Customer</th><th>Service</th><th>Cancellation fee</th></tr></thead>
+            <thead><tr><th>Date</th><th>Home</th><th>Service</th><th>Cancellation fee</th></tr></thead>
             <tbody id="cancelledVisitsBody"></tbody>
           </table>
         </div>
@@ -298,7 +298,7 @@
             <button class="btn primary small" id="assignMissingInvoiceServiceBtn" onclick="assignServiceToMissingInvoices()">Assign & invoice selected</button>
           </div>
           <table class="data-table">
-            <thead><tr><th><input type="checkbox" id="missingInvoiceSelectAll" onchange="toggleAllMissingInvoice(this)" /></th><th>Date</th><th>Customer</th><th>Technician</th><th>Service label</th></tr></thead>
+            <thead><tr><th><input type="checkbox" id="missingInvoiceSelectAll" onchange="toggleAllMissingInvoice(this)" /></th><th>Date</th><th>Home</th><th>Technician</th><th>Service label</th></tr></thead>
             <tbody id="missingInvoiceBody"></tbody>
           </table>
         </div>
@@ -362,7 +362,7 @@
 
         <div class="portal-card" style="max-width:520px; margin:0 0 24px;">
           <div style="font-size:14px; font-weight:600;">Default service for auto-scheduled jobs</div>
-          <p class="portal-sub" style="margin:0;">Used to price a completed job when it was never linked to a specific service and there's no prior job for that customer to go by — mainly auto-scheduled vacation-rental turnover cleanings and bulk-imported appointments, which don't have a "pick a service" step. Set this once and jobs like those will invoice automatically going forward. It never overrides a service you (or a form) picked on purpose.</p>
+          <p class="portal-sub" style="margin:0;">Used to price a completed job when it was never linked to a specific service and there's no prior job for that home to go by — mainly auto-scheduled vacation-rental turnover cleanings and bulk-imported appointments, which don't have a "pick a service" step. Set this once and jobs like those will invoice automatically going forward. It never overrides a service you (or a form) picked on purpose.</p>
           <label>Default service<select id="defaultServiceSelect"><option value="">None set — these jobs won't auto-invoice</option></select></label>
           <div id="defaultServiceStatus" class="portal-sub" style="margin:0;"></div>
           <div style="display:flex; gap:8px;">
@@ -393,21 +393,21 @@
           <div style="font-size:14px; font-weight:600;">Backup / export</div>
           <p class="portal-sub" style="margin:0;">Download your data as spreadsheets any time — a safety net independent of the server.</p>
           <div style="display:flex; gap:8px; flex-wrap:wrap;">
-            <a class="btn" href="/api/export/customers.csv">Customers CSV</a>
+            <a class="btn" href="/api/export/customers.csv">Homes CSV</a>
             <a class="btn" href="/api/export/appointments.csv">Appointments CSV</a>
             <a class="btn" href="/api/export/invoices.csv">Invoices CSV</a>
           </div>
           <div style="border-top:1px solid #eef1f2; padding-top:12px; margin-top:4px;">
-            <div class="portal-sub" style="margin:0 0 8px;">If the customer list ever comes back empty (e.g. after a hosting change), this restores the built-in backup roster. Safe to click any time — it does nothing if customers already exist.</div>
-            <button class="btn" id="restoreCustomersBtn">Restore customer list from backup</button>
+            <div class="portal-sub" style="margin:0 0 8px;">If the home list ever comes back empty (e.g. after a hosting change), this restores the built-in backup roster. Safe to click any time — it does nothing if homes already exist.</div>
+            <button class="btn" id="restoreCustomersBtn">Restore home list from backup</button>
           </div>
           <div style="border-top:1px solid #eef1f2; padding-top:12px; margin-top:4px;">
-            <div class="portal-sub" style="margin:0 0 8px;">Cleans up appointments accidentally created twice for the same property on the same day (e.g. from re-running a bulk import). Keeps the first one, removes the rest.</div>
+            <div class="portal-sub" style="margin:0 0 8px;">Cleans up appointments accidentally created twice for the same home on the same day (e.g. from re-running a bulk import). Keeps the first one, removes the rest.</div>
             <button class="btn" id="dedupeAppointmentsBtn">Remove duplicate appointments</button>
           </div>
           <div style="border-top:1px solid #eef1f2; padding-top:12px; margin-top:4px;">
-            <div class="portal-sub" style="margin:0 0 8px;">Paste a contact list to fill in phone numbers/emails for existing customers — only fills in blanks, never overwrites anything already on file.</div>
-            <button class="btn" id="bulkContactBtn">Update customer contact info</button>
+            <div class="portal-sub" style="margin:0 0 8px;">Paste a contact list to fill in phone numbers/emails for existing homes — only fills in blanks, never overwrites anything already on file.</div>
+            <button class="btn" id="bulkContactBtn">Update home contact info</button>
           </div>
           <div style="border-top:1px solid #eef1f2; padding-top:12px; margin-top:4px;">
             <div class="portal-sub" style="margin:0 0 8px;">Paste a list of properties and their owners to create owner accounts and link them in one go — never overwrites an existing link.</div>
@@ -417,7 +417,7 @@
 
         <div class="portal-card" style="max-width:520px; margin:24px 0 0;">
           <div style="font-size:14px; font-weight:600;">Service catalog</div>
-          <p class="portal-sub" style="margin:0;">Standard services. Pick one on an appointment to speed up entry — and when a technician marks that job complete, a draft invoice is created automatically at the right price. A service can have one flat price, or vary by how often the customer's serviced.</p>
+          <p class="portal-sub" style="margin:0;">Standard services. Pick one on an appointment to speed up entry — and when a technician marks that job complete, a draft invoice is created automatically at the right price. A service can have one flat price, or vary by how often the home's serviced.</p>
           <div id="servicesList" style="display:flex; flex-direction:column; gap:6px;"></div>
           <div id="servicesError" class="portal-error hidden"></div>
           <div style="border-top:1px solid #eef1f2; padding-top:12px; display:flex; flex-direction:column; gap:10px;">

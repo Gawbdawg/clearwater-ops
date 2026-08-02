@@ -169,7 +169,7 @@ function renderCustomerTable() {
         <button class="btn small danger" onclick="deleteCustomer(${c.id})">Delete</button>
       </td>
     </tr>
-  `).join('') || '<tr><td colspan="9" class="empty-state">No customers found.</td></tr>';
+  `).join('') || '<tr><td colspan="9" class="empty-state">No homes found.</td></tr>';
 }
 
 window.viewOwnerPortal = async (ownerId) => {
@@ -196,6 +196,21 @@ function ownerSelectOptions(selectedId) {
 
 function customerForm(c = {}) {
   const eq = c.equipment || {};
+  const owner = c.ownerId ? state.owners.find((o) => o.id === c.ownerId) : null;
+  const homePricing = c.customPricing || {};
+  const pricingRows = state.services.length
+    ? state.services.map((s) => {
+        const ownerRate = owner && owner.customPricing ? owner.customPricing[s.id] : undefined;
+        const context = [`catalog: ${serviceFreqSummary(s)}`];
+        if (ownerRate !== undefined) context.push(`owner default: ${money(ownerRate)}`);
+        return `
+          <label style="flex-direction:row; align-items:center; justify-content:space-between; gap:10px;">
+            <span>${s.name} <span style="color:var(--text-faint); font-weight:400;">(${context.join(' · ')})</span></span>
+            <input type="number" step="0.01" style="width:110px;" id="f_hprice_${s.id}" value="${homePricing[s.id] !== undefined ? homePricing[s.id] : ''}" placeholder="default" />
+          </label>
+        `;
+      }).join('')
+    : '<div class="portal-hint" style="margin:0;">Add services in Settings → Service catalog first, then come back here to set this home\'s custom prices.</div>';
   return `
     <label>Name<input id="f_name" value="${c.name || ''}" /></label>
     <label>Type
@@ -266,6 +281,13 @@ function customerForm(c = {}) {
         <label>Password<input type="password" id="f_newOwnerPassword" autocomplete="new-password" /></label>
       </div>
     </div>
+
+    <div style="display:flex; flex-direction: column; gap: 10px; border-top: 1px solid #eef1f2; padding-top: 12px;">
+      <div style="font-size:13px; font-weight:600; color:#33505c;">Custom pricing for this home (optional)</div>
+      <p class="portal-hint" style="margin:0;">Overrides the owner's default price (and the catalog price) for just this property — useful when the same owner is charged differently at different homes. Leave blank to use the owner's rate.</p>
+      ${pricingRows}
+    </div>
+
     <div class="modal-actions">
       <button class="btn" onclick="closeModal()">Cancel</button>
       <button class="btn primary" id="saveCustomerBtn">Save</button>
@@ -308,15 +330,16 @@ function wireOwnerSelectToggle() {
   sync();
 }
 
-document.getElementById('newCustomerBtn').addEventListener('click', () => {
-  openModal('New Customer', customerForm());
+document.getElementById('newCustomerBtn').addEventListener('click', async () => {
+  if (state.services.length === 0) state.services = await api('/api/services');
+  openModal('New Home', customerForm());
   wireOwnerSelectToggle();
   document.getElementById('saveCustomerBtn').addEventListener('click', async () => {
     try {
       await api('/api/customers', { method: 'POST', body: JSON.stringify(readCustomerForm()) });
       closeModal(); loadCustomers();
     } catch (e) {
-      alert('Could not save customer: ' + e.message);
+      alert('Could not save home: ' + e.message);
     }
   });
 });
@@ -356,30 +379,37 @@ function readCustomerForm() {
   } else {
     data.ownerId = ownerSelectVal || null;
   }
+  const customPricing = {};
+  state.services.forEach((s) => {
+    const el = document.getElementById(`f_hprice_${s.id}`);
+    if (el && el.value !== '') customPricing[s.id] = el.value;
+  });
+  data.customPricing = customPricing;
   return data;
 }
 
-window.editCustomer = (id) => {
+window.editCustomer = async (id) => {
+  if (state.services.length === 0) state.services = await api('/api/services');
   const c = state.customers.find((x) => x.id === id);
-  openModal('Edit Customer', customerForm(c));
+  openModal('Edit Home', customerForm(c));
   wireOwnerSelectToggle();
   document.getElementById('saveCustomerBtn').addEventListener('click', async () => {
     try {
       await api('/api/customers/' + id, { method: 'PUT', body: JSON.stringify(readCustomerForm()) });
       closeModal(); loadCustomers();
     } catch (e) {
-      alert('Could not save customer: ' + e.message);
+      alert('Could not save home: ' + e.message);
     }
   });
 };
 
 window.deleteCustomer = async (id) => {
-  if (!confirm('Delete this customer? This does not delete their appointments/invoices.')) return;
+  if (!confirm('Delete this home? This does not delete their appointments/invoices.')) return;
   try {
     await api('/api/customers/' + id, { method: 'DELETE' });
     loadCustomers();
   } catch (e) {
-    alert('Could not delete customer: ' + e.message);
+    alert('Could not delete home: ' + e.message);
   }
 };
 
@@ -388,7 +418,7 @@ window.viewCustomerProfile = async (id) => {
   try {
     c = await api('/api/customers/' + id);
   } catch (e) {
-    alert('Could not load this customer: ' + e.message);
+    alert('Could not load this home: ' + e.message);
     return;
   }
   const eq = c.equipment || {};
@@ -456,7 +486,7 @@ window.viewCustomerProfile = async (id) => {
     <div class="modal-actions">
       <button class="btn" onclick="closeModal()">Close</button>
       ${c.serviceFrequency ? `<button class="btn" onclick="openScheduleRecurringModal(${c.id}, '${c.name.replace(/'/g, "\\'")}')">Schedule recurring visits</button>` : ''}
-      <button class="btn primary" onclick="closeModal(); editCustomer(${c.id});">Edit customer</button>
+      <button class="btn primary" onclick="closeModal(); editCustomer(${c.id});">Edit home</button>
     </div>
   `;
   openModal(c.name, html, true);
@@ -548,7 +578,7 @@ async function loadOwners() {
         <button class="btn small danger" onclick="deleteOwner(${o.id})">Delete</button>
       </td>
     </tr>
-  `).join('') || '<tr><td colspan="8" class="empty-state">No owner accounts yet. Create one from the Customers tab when editing a property.</td></tr>';
+  `).join('') || '<tr><td colspan="8" class="empty-state">No owner accounts yet. Create one from the Homes tab when editing a home.</td></tr>';
 }
 
 function ownerForm(o = {}) {
@@ -666,8 +696,8 @@ window.deleteOwner = async (id) => {
 
 document.getElementById('bulkCreateOwnersBtn').addEventListener('click', async () => {
   if (!confirm(
-    "Create an owner account for every customer that doesn't have one yet? " +
-    'Customers sharing an email or phone number will be grouped onto one account. ' +
+    "Create an owner account for every home that doesn't have one yet? " +
+    'Homes sharing an email or phone number will be grouped onto one account. ' +
     'No passwords are set — accounts can\'t log in until you add one.'
   )) return;
   const btn = document.getElementById('bulkCreateOwnersBtn');
@@ -675,8 +705,8 @@ document.getElementById('bulkCreateOwnersBtn').addEventListener('click', async (
   try {
     const result = await api('/api/owners/bulk-create-from-customers', { method: 'POST' });
     alert(
-      `Created ${result.ownersCreated} owner account(s) and linked ${result.customersLinked} customer(s).` +
-      (result.alreadyLinked ? `\n${result.alreadyLinked} customer(s) already had an owner and were left alone.` : '')
+      `Created ${result.ownersCreated} owner account(s) and linked ${result.customersLinked} home(s).` +
+      (result.alreadyLinked ? `\n${result.alreadyLinked} home(s) already had an owner and were left alone.` : '')
     );
     await loadOwners();
     await loadCustomers();
@@ -973,7 +1003,7 @@ function apptForm(a = {}) {
   // sort-by-time fallback code and the day view keep working when a stop has no
   // coordinates yet to route by.
   return `
-    <label>Customer
+    <label>Home
       <select id="f_customerId" ${isNew ? 'onchange="onApptCustomerChange()"' : ''}>${customerOptions(a.customerId)}</select>
     </label>
     <label>Technician
@@ -1133,7 +1163,7 @@ async function openNewApptModal(dateStr) {
   if (state.technicians.length === 0) state.technicians = await api('/api/technicians');
   if (state.services.length === 0) state.services = await api('/api/services');
   if (state.addons.length === 0) state.addons = await api('/api/addons');
-  if (state.customers.length === 0) { alert('Add a customer first.'); return; }
+  if (state.customers.length === 0) { alert('Add a home first.'); return; }
   openModal('New Appointment', apptForm(dateStr ? { date: dateStr } : {}));
   onApptCustomerChange();
   document.getElementById('saveApptBtn').addEventListener('click', async () => {
@@ -1153,7 +1183,7 @@ function openBulkImportModal() {
   const html = `
     <p class="portal-sub" style="margin:0 0 4px;">
       One line per day: <code>YYYY-MM-DD: Name One, Name Two, Name Three</code>.
-      Each name is matched against your existing customers — anything that can't be
+      Each name is matched against your existing homes — anything that can't be
       matched confidently is listed afterward instead of guessed at. Times are just
       spread through the day as placeholders; actual visit order comes from route
       optimization (Settings tab).
@@ -1376,7 +1406,7 @@ document.getElementById('invoiceStatusFilter').addEventListener('change', render
 
 function invoiceForm(i = {}) {
   return `
-    <label>Customer
+    <label>Home
       <select id="f_icustomerId">${customerOptions(i.customerId)}</select>
     </label>
     <label>Amount ($)<input type="number" step="0.01" id="f_amount" value="${i.amount || ''}" /></label>
@@ -1410,7 +1440,7 @@ function readInvoiceForm() {
 
 document.getElementById('newInvoiceBtn').addEventListener('click', async () => {
   if (state.customers.length === 0) state.customers = await api('/api/customers');
-  if (state.customers.length === 0) { alert('Add a customer first.'); return; }
+  if (state.customers.length === 0) { alert('Add a home first.'); return; }
   openModal('New Invoice', invoiceForm());
   document.getElementById('saveInvoiceBtn').addEventListener('click', async () => {
     try {
@@ -1469,7 +1499,7 @@ async function loadSchedule() {
               <strong>${a.startTime}${a.endTime ? '–' + a.endTime : ''} — ${a.customer ? a.customer.name : 'Unknown'}</strong>
               <div class="meta">${a.serviceType} ${a.customer && a.customer.address ? '· ' + a.customer.address : ''}</div>
             </div>
-            <button class="btn small" onclick="copyCustomerText(${a.id})">Copy customer text</button>
+            <button class="btn small" onclick="copyCustomerText(${a.id})">Copy home text</button>
           </div>
         `).join('')}
       </div>
@@ -1486,7 +1516,7 @@ window.copyTechText = async (date, technicianId) => {
 
 window.copyCustomerText = async (appointmentId) => {
   const data = await api(`/api/schedule/appointment/${appointmentId}/customer-text`);
-  openTextModal(`Message to ${data.customer ? data.customer.name : 'customer'}`, data.text);
+  openTextModal(`Message to ${data.customer ? data.customer.name : 'the home'}`, data.text);
 };
 
 // ---------- Property Calendar (owner-submitted guest booking dates) ----------
@@ -2136,16 +2166,16 @@ window.deleteAdminAccount = async (id) => {
 };
 
 document.getElementById('restoreCustomersBtn').addEventListener('click', async () => {
-  if (!confirm('Restore the customer list from the built-in backup? This only adds customers if the list is currently empty — it will not touch or duplicate anything if customers already exist.')) return;
+  if (!confirm('Restore the home list from the built-in backup? This only adds homes if the list is currently empty — it will not touch or duplicate anything if homes already exist.')) return;
   const btn = document.getElementById('restoreCustomersBtn');
   btn.disabled = true;
   try {
     const result = await api('/api/customers/restore-seed-backup', { method: 'POST' });
     if (result.restored) {
-      alert(`Restored ${result.count} customers from backup.`);
+      alert(`Restored ${result.count} homes from backup.`);
       loadCustomers();
     } else {
-      alert(`No action taken — ${result.count} customer(s) already exist.`);
+      alert(`No action taken — ${result.count} home(s) already exist.`);
     }
   } catch (e) {
     alert('Could not restore: ' + e.message);
@@ -2157,7 +2187,7 @@ document.getElementById('restoreCustomersBtn').addEventListener('click', async (
 function openBulkContactModal() {
   const html = `
     <p class="portal-sub" style="margin:0 0 4px;">
-      One line per customer: <code>Name: value, value</code> — each value can be a phone
+      One line per home: <code>Name: value, value</code> — each value can be a phone
       number or an email, in any order. Only blank fields get filled in; anything
       already on file is left alone.
     </p>
@@ -2168,7 +2198,7 @@ function openBulkContactModal() {
       <button class="btn primary" id="bulkContactRunBtn">Update</button>
     </div>
   `;
-  openModal('Update customer contact info', html, true);
+  openModal('Update home contact info', html, true);
   document.getElementById('bulkContactRunBtn').addEventListener('click', async () => {
     const btn = document.getElementById('bulkContactRunBtn');
     const resultEl = document.getElementById('bulkContactResult');
@@ -2177,7 +2207,7 @@ function openBulkContactModal() {
     btn.textContent = 'Updating…';
     try {
       const result = await api('/api/customers/bulk-update-contact', { method: 'POST', body: JSON.stringify({ text }) });
-      let html2 = `<div class="portal-hint" style="margin:10px 0;">Updated ${result.updatedCount} customer(s).${result.unchangedCount ? ` ${result.unchangedCount} already had that info on file.` : ''}${result.unmatchedCount ? ` ${result.unmatchedCount} name(s) couldn't be matched.` : ''}</div>`;
+      let html2 = `<div class="portal-hint" style="margin:10px 0;">Updated ${result.updatedCount} home(s).${result.unchangedCount ? ` ${result.unchangedCount} already had that info on file.` : ''}${result.unmatchedCount ? ` ${result.unmatchedCount} name(s) couldn't be matched.` : ''}</div>`;
       if (result.unmatched.length) {
         html2 += `<div style="max-height:180px; overflow-y:auto; font-size:12px; background:#fef6f5; border-radius:6px; padding:8px;">
           ${result.unmatched.map((u) => `"${u.name}"`).join('<br>')}
@@ -2201,14 +2231,14 @@ document.getElementById('bulkContactBtn').addEventListener('click', openBulkCont
 function openBulkLinkOwnersModal() {
   const html = `
     <p class="portal-sub" style="margin:0 0 4px;">
-      One line per property/customer: <code>CustomerName: OwnerName, value, value</code> —
+      One line per home: <code>HomeName: OwnerName, value, value</code> —
       each value can be a phone number or an email, in any order. Creates the owner
       account if it doesn't exist yet (no password set, so nobody can log in until you
-      add one), creates the property/customer too if it doesn't exist yet (as a
-      vacation rental), and links them. If a property is already linked to an owner,
+      add one), creates the home too if it doesn't exist yet (as a
+      vacation rental), and links them. If a home is already linked to an owner,
       this fills in any phone/email that owner is still missing instead of skipping it
       — but never overwrites contact info already on file, and never changes which
-      owner a property is linked to.
+      owner a home is linked to.
     </p>
     <textarea id="bulkLinkOwnersText" rows="14" style="width:100%; font-family:monospace; font-size:12px;" placeholder="Sea Salt Forest: Sam, (503) 481-1333, sam@example.com"></textarea>
     <div id="bulkLinkOwnersResult"></div>
@@ -2226,7 +2256,7 @@ function openBulkLinkOwnersModal() {
     btn.textContent = 'Linking…';
     try {
       const result = await api('/api/owners/bulk-link-from-text', { method: 'POST', body: JSON.stringify({ text }) });
-      let html2 = `<div class="portal-hint" style="margin:10px 0;">Linked ${result.linkedCount} customer(s) (${result.ownersCreated} new owner account(s), ${result.customersCreated} new propert${result.customersCreated === 1 ? 'y' : 'ies'} created).${result.enrichedCount ? ` ${result.enrichedCount} existing owner(s) got contact info filled in.` : ''}${result.alreadyLinked.length ? ` ${result.alreadyLinked.length} already complete.` : ''}</div>`;
+      let html2 = `<div class="portal-hint" style="margin:10px 0;">Linked ${result.linkedCount} home(s) (${result.ownersCreated} new owner account(s), ${result.customersCreated} new home${result.customersCreated === 1 ? '' : 's'} created).${result.enrichedCount ? ` ${result.enrichedCount} existing owner(s) got contact info filled in.` : ''}${result.alreadyLinked.length ? ` ${result.alreadyLinked.length} already complete.` : ''}</div>`;
       if (result.created.length) {
         html2 += `<div style="max-height:140px; overflow-y:auto; font-size:12px; background:#f4f9fa; border-radius:6px; padding:8px; margin-bottom:8px;">${result.created.join('<br>')}</div>`;
       }

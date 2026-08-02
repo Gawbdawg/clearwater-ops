@@ -157,10 +157,23 @@ async function tryGeocode(address, updates) {
   }
 }
 
+// Cleans a raw { [serviceId]: price } object the same way routes/owners.js does for
+// owner-level custom pricing — drops blank/invalid entries so leaving a field empty
+// means "no override at this level," not "$0."
+function cleanCustomPricing(raw) {
+  const cleaned = {};
+  Object.entries(raw || {}).forEach(([serviceId, price]) => {
+    if (price !== '' && price !== null && price !== undefined && !Number.isNaN(Number(price))) {
+      cleaned[serviceId] = Number(price);
+    }
+  });
+  return cleaned;
+}
+
 router.post('/', async (req, res) => {
   const {
     name, email, phone, address, notes, type, icalUrl, ownerId, newOwner, equipment,
-    serviceFrequency, customFrequencyDays,
+    serviceFrequency, customFrequencyDays, customPricing,
   } = req.body;
   if (!name) return res.status(400).json({ error: 'Name is required' });
 
@@ -188,6 +201,10 @@ router.post('/', async (req, res) => {
     equipment: equipment || null,
     serviceFrequency: serviceFrequency || null,
     customFrequencyDays: customFrequencyDays ? Number(customFrequencyDays) : null,
+    // This home's own per-service price overrides — take priority over the owner's
+    // default custom pricing (see lib/autoInvoice.js#resolvePrice), for owners who
+    // charge differently at different properties.
+    customPricing: cleanCustomPricing(customPricing),
     ...geo,
   });
   res.status(201).json(withOwnerName(customer));
@@ -209,6 +226,9 @@ router.put('/:id', async (req, res) => {
   }
   if (updates.customFrequencyDays !== undefined) {
     updates.customFrequencyDays = updates.customFrequencyDays ? Number(updates.customFrequencyDays) : null;
+  }
+  if (updates.customPricing !== undefined) {
+    updates.customPricing = cleanCustomPricing(updates.customPricing);
   }
 
   // Address changed — re-geocode right away instead of just clearing the cached
@@ -257,7 +277,7 @@ router.post('/:id/schedule-recurring', (req, res) => {
   const customer = store.getById('customers', req.params.id);
   if (!customer) return res.status(404).json({ error: 'Customer not found' });
   if (!customer.serviceFrequency) {
-    return res.status(400).json({ error: 'This customer has no service frequency set — set one on the Edit Customer form first.' });
+    return res.status(400).json({ error: 'This home has no service frequency set — set one on the Edit Home form first.' });
   }
   const { startDate, startTime, technicianId, serviceId } = req.body;
   if (!startDate || !startTime) {
