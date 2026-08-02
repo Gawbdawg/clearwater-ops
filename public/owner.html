@@ -134,7 +134,7 @@
 
         <nav class="owner-tabs" id="ownerTabs">
           <button class="owner-tab-btn active" data-tab="overview">Overview</button>
-          <button class="owner-tab-btn" data-tab="visits">Visits</button>
+          <button class="owner-tab-btn" data-tab="visits">Services</button>
           <button class="owner-tab-btn hidden" id="calendarTabBtn" data-tab="calendar">Booking calendar</button>
           <button class="owner-tab-btn" data-tab="requests">Requests <span id="pendingRequestsBadge" class="tab-count hidden"></span></button>
         </nav>
@@ -158,8 +158,8 @@
 
         <!-- Visits -->
         <div id="tab-visits" class="owner-tab-panel hidden">
-          <h2>Upcoming service visits</h2>
-          <p class="portal-sub">The hot tub service visits already on the calendar for your properties.</p>
+          <h2>Upcoming services</h2>
+          <p class="portal-sub">The hot tub services already on the calendar for your properties.</p>
           <div id="visitsList"></div>
         </div>
 
@@ -205,7 +205,7 @@
             <label style="flex:1; min-width:160px;">Notes <input type="text" id="requestNotes" placeholder="e.g. extra clean, repair" /></label>
           </div>
           <div id="requestAddonsRow" class="hidden" style="margin:-6px 0 12px;">
-            <div class="portal-sub" style="margin:0 0 6px;">Add any extras for this visit:</div>
+            <div class="portal-sub" style="margin:0 0 6px;">Add any extras for this service:</div>
             <div id="requestAddonsList" class="job-addon-chips"></div>
           </div>
           <button class="btn primary" id="addRequestBtn">Request</button>

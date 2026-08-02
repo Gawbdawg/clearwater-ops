@@ -189,8 +189,8 @@ function renderServiceSetup() {
 
   if (d.currentFrequency) {
     const priceLine = d.isCustom
-      ? `$${Number(d.customPrice).toFixed(2)} per visit`
-      : `$${Number(d[d.currentFrequency]).toFixed(2)} per visit`;
+      ? `$${Number(d.customPrice).toFixed(2)} per service`
+      : `$${Number(d[d.currentFrequency]).toFixed(2)} per service`;
     content.innerHTML = `
       <h2 style="margin:0 0 4px; font-size:16px;">Your regular service</h2>
       <p class="portal-sub" style="margin:0;">${FREQUENCY_LABELS[d.currentFrequency] || d.currentFrequency} — ${priceLine}</p>
@@ -202,13 +202,13 @@ function renderServiceSetup() {
   const priceFor = (freq) => (d.isCustom ? Number(d.customPrice) : Number(d[freq]));
   content.innerHTML = `
     <h2 style="margin:0 0 4px; font-size:16px;">Set up your regular service</h2>
-    <p class="portal-sub" style="margin:0 0 12px;">Pick how often you'd like service and when to start — we'll put the visits right on the calendar.</p>
+    <p class="portal-sub" style="margin:0 0 12px;">Pick how often you'd like service and when to start — we'll put the services right on the calendar.</p>
     <div id="ssError" class="portal-error hidden"></div>
     <label>Frequency
       <select id="ssFrequency">
-        <option value="weekly">Weekly — $${priceFor('weekly').toFixed(2)}/visit</option>
-        <option value="biweekly">Every 2 weeks — $${priceFor('biweekly').toFixed(2)}/visit</option>
-        <option value="every4weeks">Every 4 weeks — $${priceFor('every4weeks').toFixed(2)}/visit</option>
+        <option value="weekly">Weekly — $${priceFor('weekly').toFixed(2)}/service</option>
+        <option value="biweekly">Every 2 weeks — $${priceFor('biweekly').toFixed(2)}/service</option>
+        <option value="every4weeks">Every 4 weeks — $${priceFor('every4weeks').toFixed(2)}/service</option>
       </select>
     </label>
     <label>Start date<input type="date" id="ssStartDate" value="${todayStr()}" /></label>
@@ -287,7 +287,7 @@ async function loadOverview() {
   const cards = [
     {
       value: nextVisit ? niceDateShort(nextVisit.date) : '—',
-      label: 'Next scheduled visit',
+      label: 'Next scheduled service',
       detail: nextVisit ? (properties.length > 1 ? nextVisit.propertyName : (nextVisit.serviceType || '')) : 'Nothing scheduled yet',
     },
     {
@@ -352,7 +352,7 @@ async function loadVisits() {
   const visits = await api('/api/owner/appointments');
   const el = document.getElementById('visitsList');
   if (visits.length === 0) {
-    el.innerHTML = '<div class="empty-state">No visits on the calendar yet.</div>';
+    el.innerHTML = '<div class="empty-state">No services on the calendar yet.</div>';
     return;
   }
   const today = new Date().toISOString().slice(0, 10);
@@ -366,7 +366,7 @@ async function loadVisits() {
       </div>
       ${v.status === 'scheduled' ? renderVisitAddons(v) : (v.addons && v.addons.length ? `<div class="job-meta">Extras: ${v.addons.map((a) => `${a.name} ($${Number(a.price).toFixed(2)})`).join(', ')}</div>` : '')}
       ${renderVisitPhotos(v)}
-      ${v.status === 'scheduled' ? `<button class="btn small danger" style="margin-top:8px;" onclick="cancelVisit(${v.id}, '${v.date}', '${v.startTime || ''}')">Cancel visit</button>` : ''}
+      ${v.status === 'scheduled' ? `<button class="btn small danger" style="margin-top:8px;" onclick="cancelVisit(${v.id}, '${v.date}', '${v.startTime || ''}')">Cancel service</button>` : ''}
     </div>
   `).join('');
 }
@@ -403,20 +403,20 @@ window.cancelVisit = async (apptId, dateStr, startTime) => {
   const visitDateTime = businessTimeToUtc(dateStr, startTime);
   const hoursUntil = (visitDateTime.getTime() - Date.now()) / (1000 * 60 * 60);
   const warning = hoursUntil < 24
-    ? "This visit is less than 24 hours away. Our cancellation policy charges half the service price as a fee for cancellations this close to the visit. Cancel anyway?"
-    : 'Cancel this visit?';
+    ? "This service is less than 24 hours away. Our cancellation policy charges half the service price as a fee for cancellations this close to the appointment. Cancel anyway?"
+    : 'Cancel this service?';
   if (!confirm(warning)) return;
   try {
     const result = await api(`/api/owner/appointments/${apptId}/cancel`, { method: 'POST' });
     if (result.feeCharged) {
-      alert(`Visit cancelled. A $${Number(result.feeAmount).toFixed(2)} cancellation fee applies since this was within 24 hours.`);
+      alert(`Service cancelled. A $${Number(result.feeAmount).toFixed(2)} cancellation fee applies since this was within 24 hours.`);
     } else {
-      alert('Visit cancelled — no fee.');
+      alert('Service cancelled — no fee.');
     }
     loadVisits();
     loadOverview();
   } catch (e) {
-    alert(e.message || 'Could not cancel this visit.');
+    alert(e.message || 'Could not cancel this service.');
   }
 };
 
@@ -442,7 +442,7 @@ function renderVisitAddons(v) {
   if (addonsCatalog.length === 0) return '';
   return `
     <div class="job-addons" style="width:100%; margin-top:8px;">
-      <div class="job-meta" style="margin-bottom:4px;">Add extras to this visit${total ? ` — +$${total.toFixed(2)} added` : ''}</div>
+      <div class="job-meta" style="margin-bottom:4px;">Add extras to this service${total ? ` — +$${total.toFixed(2)} added` : ''}</div>
       <div class="job-addon-chips">
         ${addonsCatalog.map((a) => `
           <button type="button" class="addon-chip ${attachedIds.includes(a.id) ? 'added' : ''}" onclick="toggleVisitAddon(${v.id}, ${a.id}, ${attachedIds.includes(a.id)})">
