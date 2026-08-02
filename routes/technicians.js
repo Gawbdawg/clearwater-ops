@@ -20,7 +20,7 @@ router.get('/', (req, res) => {
 });
 
 router.post('/', (req, res) => {
-  const { name, email, phone, username, password } = req.body;
+  const { name, email, phone, username, password, carrier } = req.body;
   if (!name) return res.status(400).json({ error: 'Name is required' });
 
   if (username) {
@@ -34,6 +34,10 @@ router.post('/', (req, res) => {
     name,
     email: email || '',
     phone: phone || '',
+    // Which carrier gateway to text this tech's route to when Twilio isn't
+    // configured — see lib/sms.js#CARRIER_GATEWAYS. Blank just means "no free
+    // texting fallback available yet," not an error.
+    carrier: carrier || '',
     username: username || '',
     passwordHash: password ? hashPassword(password) : '',
   });
@@ -41,11 +45,12 @@ router.post('/', (req, res) => {
 });
 
 router.put('/:id', (req, res) => {
-  const { name, email, phone, username, password } = req.body;
+  const { name, email, phone, username, password, carrier } = req.body;
   const updates = {};
   if (name !== undefined) updates.name = name;
   if (email !== undefined) updates.email = email;
   if (phone !== undefined) updates.phone = phone;
+  if (carrier !== undefined) updates.carrier = carrier;
 
   if (username !== undefined) {
     if (username) {

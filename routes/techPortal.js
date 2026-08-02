@@ -1,13 +1,26 @@
 const express = require('express');
 const store = require('../lib/store');
-const { requireTechAuth } = require('../lib/auth');
+const { requireTechAuth, sanitizeTechnician } = require('../lib/auth');
 const { orderStopsByRoute } = require('../lib/routeOptimizer');
 const { savePhoto, deletePhoto } = require('../lib/uploads');
 const { syncInvoiceForCompletedAppointment } = require('../lib/autoInvoice');
-const { sendSms } = require('../lib/sms');
+const { sendSms, carrierGatewayAddress } = require('../lib/sms');
+const { sendEmail } = require('../lib/mailer');
 const router = express.Router();
 
 router.use(requireTechAuth);
+
+// Lets a tech correct their own phone number or set their carrier (for free
+// carrier-gateway texting when Twilio isn't configured, see lib/sms.js) — deliberately
+// narrow, just those two fields, so this can't be used to touch login credentials.
+router.put('/me', (req, res) => {
+  const updates = {};
+  if (req.body.phone !== undefined) updates.phone = req.body.phone;
+  if (req.body.carrier !== undefined) updates.carrier = req.body.carrier;
+  const updated = store.update('technicians', req.session.technicianId, updates);
+  if (!updated) return res.status(404).json({ error: 'Technician not found' });
+  res.json(sanitizeTechnician(updated));
+});
 
 // Techs tap an upcharge on/off by name only — the price is a back-office detail set
 // in Settings and stays hidden from the tech app everywhere (catalog, job list,
@@ -235,8 +248,26 @@ router.post('/text-my-route', async (req, res) => {
   }
 
   try {
-    const result = await sendSms({ to: tech.phone, body: text });
-    res.json({ sent: true, dryRun: !!result.dryRun, date });
+    const smsResult = await sendSms({ to: tech.phone, body: text });
+    if (!smsResult.dryRun) {
+      return res.json({ sent: true, method: 'sms', date });
+    }
+
+    // Twilio isn't configured — fall back to the tech's carrier email-to-SMS gateway
+    // if they've set one (see lib/sms.js#CARRIER_GATEWAYS), which rides on whatever
+    // email sending is already configured (lib/mailer.js) at no extra cost.
+    if (tech.carrier) {
+      const gatewayAddress = carrierGatewayAddress(tech.phone, tech.carrier);
+      if (gatewayAddress) {
+        const emailResult = await sendEmail({ to: gatewayAddress, subject: 'Route', text });
+        if (!emailResult.dryRun) {
+          return res.json({ sent: true, method: 'carrier-gateway', date });
+        }
+      }
+    }
+
+    // Neither Twilio nor email is configured — same dry-run behavior as before.
+    res.json({ sent: true, dryRun: true, date });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }

@@ -38,6 +38,8 @@ async function showJobs(tech) {
   jobsView.classList.remove('hidden');
   logoutBtn.style.display = '';
   document.getElementById('welcomeMsg').textContent = `Hi ${tech.name}`;
+  document.getElementById('myPhoneInput').value = tech.phone || '';
+  document.getElementById('myCarrierInput').value = tech.carrier || '';
   try {
     addonsCatalog = await api('/api/tech/addons');
   } catch (e) {
@@ -248,12 +250,43 @@ document.getElementById('textMyRouteBtn').addEventListener('click', async () => 
   statusEl.textContent = 'Sending…';
   try {
     const result = await api('/api/tech/text-my-route', { method: 'POST', body: JSON.stringify({ date }) });
-    statusEl.textContent = result.dryRun
-      ? `Route for ${niceDate(date)} logged (texting isn't set up yet — ask the admin).`
-      : `Texted! Check your phone for ${niceDate(date)}'s route.`;
+    if (result.method === 'sms') {
+      statusEl.textContent = `Texted! Check your phone for ${niceDate(date)}'s route.`;
+    } else if (result.method === 'carrier-gateway') {
+      statusEl.textContent = `Sent via your carrier — should land as a text any moment for ${niceDate(date)}.`;
+    } else {
+      statusEl.textContent = currentTech && currentTech.carrier
+        ? `Route for ${niceDate(date)} logged (neither texting nor email is set up on the shop's end yet — ask the admin).`
+        : `Route for ${niceDate(date)} logged (texting isn't set up yet — pick your carrier below for free texting, or ask the admin).`;
+    }
   } catch (e) {
     statusEl.textContent = '';
     alert('Could not text the route: ' + e.message);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+// ---- Texting settings (phone + carrier, for the free carrier-gateway fallback) ----
+document.getElementById('textingSettingsToggle').addEventListener('click', (e) => {
+  e.preventDefault();
+  document.getElementById('textingSettings').classList.toggle('hidden');
+});
+
+document.getElementById('saveTextingSettingsBtn').addEventListener('click', async () => {
+  const statusEl = document.getElementById('myTextingSettingsStatus');
+  const btn = document.getElementById('saveTextingSettingsBtn');
+  const phone = document.getElementById('myPhoneInput').value;
+  const carrier = document.getElementById('myCarrierInput').value;
+  btn.disabled = true;
+  statusEl.textContent = 'Saving…';
+  try {
+    const updated = await api('/api/tech/me', { method: 'PUT', body: JSON.stringify({ phone, carrier }) });
+    currentTech = updated;
+    statusEl.textContent = 'Saved.';
+  } catch (e) {
+    statusEl.textContent = '';
+    alert('Could not save: ' + e.message);
   } finally {
     btn.disabled = false;
   }

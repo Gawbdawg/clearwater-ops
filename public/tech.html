@@ -44,9 +44,38 @@
             <button class="btn small" id="jobsDateGoBtn">View that day</button>
             <button class="btn small" id="jobsBackToUpcomingBtn" style="display:none;">Back to upcoming jobs</button>
           </div>
-          <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:12px;">
+          <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:6px;">
             <button class="btn primary small" id="textMyRouteBtn">Text me today's route</button>
             <span id="textMyRouteStatus" class="portal-sub" style="margin:0;"></span>
+          </div>
+          <div id="textingSettingsToggleRow" style="margin-bottom:12px;">
+            <a href="#" id="textingSettingsToggle" style="font-size:12px;">Texting settings</a>
+          </div>
+          <div id="textingSettings" class="portal-card hidden" style="max-width:420px; margin:0 0 16px;">
+            <div style="font-size:13px; font-weight:600;">Texting settings</div>
+            <p class="portal-sub" style="margin:0;">If the shop hasn't set up real texting yet, picking your carrier lets "Text me today's route" send through your carrier's free email-to-text gateway instead.</p>
+            <label>Your phone number<input type="text" id="myPhoneInput" placeholder="555-123-4567" /></label>
+            <label>Your carrier
+              <select id="myCarrierInput">
+                <option value="">Not set</option>
+                <option value="verizon">Verizon</option>
+                <option value="att">AT&amp;T</option>
+                <option value="tmobile">T-Mobile</option>
+                <option value="sprint">Sprint</option>
+                <option value="uscellular">US Cellular</option>
+                <option value="boost">Boost Mobile</option>
+                <option value="cricket">Cricket Wireless</option>
+                <option value="metropcs">Metro by T-Mobile</option>
+                <option value="googlefi">Google Fi</option>
+                <option value="visible">Visible</option>
+                <option value="straighttalk">Straight Talk</option>
+                <option value="mint">Mint Mobile</option>
+              </select>
+            </label>
+            <div id="myTextingSettingsStatus" class="portal-sub" style="margin:0;"></div>
+            <div style="display:flex; gap:8px;">
+              <button class="btn primary small" id="saveTextingSettingsBtn">Save</button>
+            </div>
           </div>
           <div id="jobsList" class="card-list"></div>
         </div>

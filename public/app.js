@@ -787,11 +787,26 @@ window.viewTechPortal = async (id) => {
   window.open('/tech', '_blank');
 };
 
+// Same carrier list as public/tech.js's own "Texting settings" panel — kept in sync by
+// hand since the two portals don't share a JS module, but either the admin or the tech
+// themselves can set this, whichever knows it.
+const CARRIER_OPTIONS = [
+  ['', 'Not set'], ['verizon', 'Verizon'], ['att', 'AT&T'], ['tmobile', 'T-Mobile'],
+  ['sprint', 'Sprint'], ['uscellular', 'US Cellular'], ['boost', 'Boost Mobile'],
+  ['cricket', 'Cricket Wireless'], ['metropcs', 'Metro by T-Mobile'], ['googlefi', 'Google Fi'],
+  ['visible', 'Visible'], ['straighttalk', 'Straight Talk'], ['mint', 'Mint Mobile'],
+];
+
 function techForm(t = {}) {
   return `
     <label>Name<input id="f_tname" value="${t.name || ''}" /></label>
     <label>Phone<input id="f_tphone" value="${t.phone || ''}" /></label>
     <label>Email<input id="f_temail" value="${t.email || ''}" /></label>
+    <label>Carrier <span style="font-weight:400; color:var(--text-faint);">(for free carrier-gateway texting if Twilio isn't set up)</span>
+      <select id="f_tcarrier">
+        ${CARRIER_OPTIONS.map(([val, label]) => `<option value="${val}" ${(t.carrier || '') === val ? 'selected' : ''}>${label}</option>`).join('')}
+      </select>
+    </label>
     <div style="display:flex; flex-direction: column; gap: 12px; border-top: 1px solid #eef1f2; padding-top: 12px;">
       <div style="font-size:13px; font-weight:600; color:#33505c;">Technician portal login</div>
       <label>Username<input id="f_tusername" value="${t.username || ''}" autocomplete="off" /></label>
@@ -821,6 +836,7 @@ function readTechForm() {
     name: document.getElementById('f_tname').value,
     phone: document.getElementById('f_tphone').value,
     email: document.getElementById('f_temail').value,
+    carrier: document.getElementById('f_tcarrier').value,
     username: document.getElementById('f_tusername').value,
     password: document.getElementById('f_tpassword').value,
   };
