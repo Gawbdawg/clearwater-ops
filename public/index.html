@@ -87,6 +87,10 @@
           <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v16H4z"/><path d="M22 6l-10 7L2 6"/></svg>
           Newsletter
         </button>
+        <button class="tab-btn" data-tab="agreements">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><polyline points="9 15 11 17 15 13"/></svg>
+          Agreements
+        </button>
         <button class="tab-btn" data-tab="settings">
           <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
           Settings
@@ -314,6 +318,28 @@
             <button class="btn primary" id="sendNewsletterBtn">Send to subscribers</button>
           </div>
         </div>
+      </section>
+
+      <!-- Agreements -->
+      <section id="tab-agreements" class="tab-panel">
+        <div class="panel-header">
+          <h1>Agreements</h1>
+        </div>
+        <p class="portal-sub" style="margin:0 0 12px;">Every owner and whether they've agreed to the Service Agreement & Terms of Service from their portal. Download a signed PDF copy — name, contact info, and the exact date/time they agreed — for your records.</p>
+        <div class="stat-cards" id="agreementStats"></div>
+        <div class="filter-row">
+          <label>Status
+            <select id="agreementStatusFilter">
+              <option value="all">All owners</option>
+              <option value="agreed">Agreed</option>
+              <option value="notAgreed">Not yet agreed</option>
+            </select>
+          </label>
+        </div>
+        <table class="data-table">
+          <thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Properties</th><th>Status</th><th>Agreed on</th><th></th></tr></thead>
+          <tbody id="agreementsBody"></tbody>
+        </table>
       </section>
 
       <!-- Settings (route optimization depot + geocoding) -->

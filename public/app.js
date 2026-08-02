@@ -41,6 +41,7 @@ function loadTab(tab) {
   if (tab === 'reports') loadReports();
   if (tab === 'settings') loadSettingsTab();
   if (tab === 'newsletter') loadNewsletterTab();
+  if (tab === 'agreements') loadAgreements();
 }
 
 // Portal links shown as hints on the Technicians/Customers/Owners tabs
@@ -1820,6 +1821,64 @@ document.getElementById('sendNewsletterBtn').addEventListener('click', async () 
     btn.textContent = 'Send to subscribers';
   }
 });
+
+// ---------- Agreements ----------
+function formatAgreedOn(isoString) {
+  if (!isoString) return '—';
+  return new Date(isoString).toLocaleString('en-US', {
+    timeZone: 'America/Los_Angeles', dateStyle: 'medium', timeStyle: 'short',
+  }) + ' PT';
+}
+
+async function loadAgreements() {
+  const owners = await api('/api/owners');
+  state.owners = owners;
+  if (state.customers.length === 0) state.customers = await api('/api/customers');
+
+  const agreedCount = owners.filter((o) => o.agreedToTerms).length;
+  document.getElementById('agreementStats').innerHTML = `
+    <div class="stat-card">
+      <div class="stat-label">Agreed</div>
+      <div class="stat-value">${agreedCount} / ${owners.length}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Not yet agreed</div>
+      <div class="stat-value">${owners.length - agreedCount}</div>
+    </div>
+  `;
+  renderAgreementsTable();
+}
+
+function renderAgreementsTable() {
+  const filter = document.getElementById('agreementStatusFilter').value;
+  let owners = state.owners || [];
+  if (filter === 'agreed') owners = owners.filter((o) => o.agreedToTerms);
+  if (filter === 'notAgreed') owners = owners.filter((o) => !o.agreedToTerms);
+  owners = owners.slice().sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+
+  const body = document.getElementById('agreementsBody');
+  body.innerHTML = owners.length ? owners.map((o) => {
+    const properties = state.customers.filter((c) => c.ownerId === o.id);
+    const propertyLabel = properties.length ? properties.map((p) => p.name || p.address).join(', ') : '—';
+    return `
+      <tr>
+        <td>${o.name || ''}</td>
+        <td>${o.email || '—'}</td>
+        <td>${o.phone || '—'}</td>
+        <td>${propertyLabel}</td>
+        <td><span class="badge ${o.agreedToTerms ? 'paid' : 'draft'}">${o.agreedToTerms ? 'Agreed' : 'Not yet agreed'}</span></td>
+        <td>${o.agreedToTerms ? formatAgreedOn(o.agreedToTermsAt) : '—'}</td>
+        <td>${o.agreedToTerms ? `<button class="btn small" onclick="downloadAgreementPdf(${o.id})">Download PDF</button>` : ''}</td>
+      </tr>
+    `;
+  }).join('') : '<tr><td colspan="7" class="empty-state">No owners match this filter.</td></tr>';
+}
+
+document.getElementById('agreementStatusFilter').addEventListener('change', renderAgreementsTable);
+
+window.downloadAgreementPdf = (ownerId) => {
+  window.open(`/api/owners/${ownerId}/agreement.pdf`, '_blank');
+};
 
 async function loadSettingsTab() {
   const settings = await api('/api/settings');

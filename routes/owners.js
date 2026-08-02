@@ -3,6 +3,7 @@ const store = require('../lib/store');
 const { hashPassword, sanitizeOwner } = require('../lib/auth');
 const { generateMonthlyInvoiceForOwner } = require('../lib/monthlyInvoice');
 const { makeCustomerMatcher } = require('../lib/customerMatch');
+const { buildAgreementPdf } = require('../lib/agreementPdf');
 const router = express.Router();
 
 function withPropertyCount(owner) {
@@ -12,6 +13,26 @@ function withPropertyCount(owner) {
 
 router.get('/', (req, res) => {
   res.json(store.getAll('owners').map(withPropertyCount));
+});
+
+// A durable, downloadable record of a signed Service Agreement — same wording the owner
+// checked "I agree" against in their portal, plus who they are and exactly when they
+// agreed. Available any time the record exists (agreedToTerms doesn't have to still be
+// true going forward — this is a historical signature, not a live status check), so a
+// signature is never lost even if terms get re-versioned down the line.
+router.get('/:id/agreement.pdf', (req, res) => {
+  const owner = store.getById('owners', req.params.id);
+  if (!owner) return res.status(404).json({ error: 'Owner not found' });
+  if (!owner.agreedToTermsAt) {
+    return res.status(400).json({ error: 'This owner has not agreed to the Service Agreement yet.' });
+  }
+  const properties = store.getAll('customers').filter((c) => c.ownerId === owner.id);
+  const filename = `service-agreement-${(owner.name || 'owner').replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.pdf`;
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  const doc = buildAgreementPdf(owner, properties);
+  doc.pipe(res);
+  doc.end();
 });
 
 router.post('/', (req, res) => {
