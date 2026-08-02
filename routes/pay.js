@@ -28,6 +28,7 @@ router.get('/:id', (req, res) => {
     status: invoice.status,
     dueDate: invoice.dueDate || '',
     customerName: customer ? customer.name : '',
+    bundledIntoInvoiceId: invoice.bundledIntoInvoiceId || null,
     stripeConfigured: stripe.isConfigured(),
   });
 });
@@ -37,6 +38,12 @@ router.post('/:id/checkout', async (req, res) => {
   if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
   if (invoice.status === 'paid') {
     return res.status(400).json({ error: 'This invoice has already been paid.' });
+  }
+  // Bundled invoices were rolled into a combined monthly invoice — that's the one that
+  // should actually get paid now. Block checkout here so an old/bookmarked pay link
+  // can't collect the same charge twice.
+  if (invoice.status === 'bundled') {
+    return res.status(400).json({ error: 'This invoice has been combined into a monthly invoice. Please use the payment link for that invoice instead.' });
   }
   const origin = `${req.protocol}://${req.get('host')}`;
   try {

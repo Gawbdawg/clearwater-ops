@@ -299,9 +299,9 @@ router.post('/bulk-link-from-text', (req, res) => {
   });
 });
 
-// Bundles this owner's completed, not-yet-billed jobs for the given month (YYYY-MM,
-// in req.body) into one combined invoice. Safe to re-run — a job already billed
-// (individually or in a prior combined invoice) never gets included twice.
+// Bundles this owner's already-created individual draft invoices for the given month
+// (YYYY-MM, in req.body) into one combined invoice — see lib/monthlyInvoice.js. Safe to
+// re-run — an invoice already bundled never gets included twice.
 router.post('/:id/generate-monthly-invoice', (req, res) => {
   try {
     const invoice = generateMonthlyInvoiceForOwner(req.params.id, req.body.month);

@@ -122,6 +122,7 @@ textarea { width: 100%; resize: vertical; }
 .badge.draft { background: #f0eefc; color: #5b3fae; }
 .badge.sent { background: #e3f1fb; color: #0b5f7a; }
 .badge.paid { background: #e5f5e8; color: #256b32; }
+.badge.bundled { background: #eef1f3; color: #5a6b73; }
 
 .stat-cards { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 18px; }
 .stat-card {

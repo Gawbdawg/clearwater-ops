@@ -38,6 +38,16 @@ function render(invoice) {
     return;
   }
 
+  if (invoice.status === 'bundled') {
+    const combinedLink = invoice.bundledIntoInvoiceId ? `${window.location.origin}/pay/${invoice.bundledIntoInvoiceId}` : null;
+    card.innerHTML = `
+      <h1>Invoice #${invoice.id}</h1>
+      <p class="portal-sub">This charge has been combined into a monthly invoice.${combinedLink ? ' Please use the link below to view and pay it.' : ' Please contact Clear Water Spa Service for your current invoice link.'}</p>
+      ${combinedLink ? `<a class="btn primary" href="${combinedLink}">View combined invoice</a>` : ''}
+    `;
+    return;
+  }
+
   if (!invoice.stripeConfigured) {
     card.innerHTML = `
       <h1>Invoice #${invoice.id}</h1>

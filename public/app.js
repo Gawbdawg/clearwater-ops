@@ -570,7 +570,7 @@ function ownerForm(o = {}) {
     <label>Billing
       <select id="f_obillingMode">
         <option value="perJob" ${o.billingMode !== 'monthly' ? 'selected' : ''}>Per job (invoice as each visit is completed)</option>
-        <option value="monthly" ${o.billingMode === 'monthly' ? 'selected' : ''}>Monthly combined (bundle all jobs into one invoice at month end)</option>
+        <option value="monthly" ${o.billingMode === 'monthly' ? 'selected' : ''}>Monthly combined (still invoices each visit individually — use "Generate monthly invoice" to bundle them into one bill at month end)</option>
       </select>
     </label>
     <label style="flex-direction:row; align-items:center; gap:8px;">
@@ -1280,6 +1280,7 @@ function renderInvoiceTable() {
   const tbody = document.querySelector('#invoiceTable tbody');
   tbody.innerHTML = rows.map((i) => {
     const overdue = isOverdue(i);
+    const bundled = i.status === 'bundled';
     return `
     <tr class="${overdue ? 'row-overdue' : ''}">
       <td>${i.customerName}</td>
@@ -1288,12 +1289,16 @@ function renderInvoiceTable() {
       <td>${i.dueDate || ''}</td>
       <td>${overdue ? '<span class="badge cancelled">Overdue</span>' : `<span class="badge ${i.status}">${i.status}</span>`}${i.stripeSessionId ? ' <span class="badge completed">Paid online</span>' : ''}</td>
       <td>
-        ${i.status !== 'paid' ? `<button class="btn small" onclick="copyPayLink(${i.id})">Copy pay link</button>` : ''}
-        ${i.isCombined
-          ? `<button class="btn small" onclick="viewInvoiceLineItems(${i.id})">View jobs</button>
-             <button class="btn small" onclick="editCombinedInvoice(${i.id})">Edit</button>`
-          : `<button class="btn small" onclick="editInvoice(${i.id})">Edit</button>`}
-        <button class="btn small danger" onclick="deleteInvoice(${i.id})">Delete</button>
+        ${bundled
+          ? `<button class="btn small" onclick="viewInvoiceLineItems(${i.bundledIntoInvoiceId})">View combined invoice</button>`
+          : `
+            ${i.status !== 'paid' ? `<button class="btn small" onclick="copyPayLink(${i.id})">Copy pay link</button>` : ''}
+            ${i.isCombined
+              ? `<button class="btn small" onclick="viewInvoiceLineItems(${i.id})">View jobs</button>
+                 <button class="btn small" onclick="editCombinedInvoice(${i.id})">Edit</button>`
+              : `<button class="btn small" onclick="editInvoice(${i.id})">Edit</button>`}
+            <button class="btn small danger" onclick="deleteInvoice(${i.id})">Delete</button>
+          `}
       </td>
     </tr>
   `;

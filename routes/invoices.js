@@ -50,6 +50,21 @@ router.put('/:id', (req, res) => {
 });
 
 router.delete('/:id', (req, res) => {
+  // Deleting a combined monthly invoice shouldn't strand the individual invoices it
+  // bundled — un-bundle them back to 'draft' so they're immediately visible and
+  // collectible again in the main Invoices list, instead of sitting permanently stuck at
+  // status:'bundled' pointing at an invoice that no longer exists.
+  const invoice = store.getById('invoices', req.params.id);
+  if (invoice && (invoice.lineItems || []).length) {
+    invoice.lineItems.forEach((li) => {
+      if (li.sourceInvoiceId) {
+        const source = store.getById('invoices', li.sourceInvoiceId);
+        if (source && source.bundledIntoInvoiceId === invoice.id) {
+          store.update('invoices', source.id, { status: 'draft', bundledIntoInvoiceId: null });
+        }
+      }
+    });
+  }
   const ok = store.remove('invoices', req.params.id);
   if (!ok) return res.status(404).json({ error: 'Invoice not found' });
   res.status(204).end();
