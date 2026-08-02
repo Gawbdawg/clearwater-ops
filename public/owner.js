@@ -263,6 +263,73 @@ document.getElementById('loginPassword').addEventListener('keydown', (e) => {
   if (e.key === 'Enter') document.getElementById('loginBtn').click();
 });
 
+document.getElementById('togglePasswordLoginBtn').addEventListener('click', () => {
+  const fields = document.getElementById('passwordLoginFields');
+  const showingPassword = !fields.classList.contains('hidden');
+  fields.classList.toggle('hidden', showingPassword);
+  document.getElementById('togglePasswordLoginBtn').textContent = showingPassword
+    ? 'Use username & password instead'
+    : 'Use email code instead';
+  document.getElementById('codeLoginStep1').classList.toggle('hidden', !showingPassword);
+  document.getElementById('codeLoginStep2').classList.add('hidden');
+});
+
+let codeLoginEmail = '';
+
+async function sendLoginCode() {
+  loginError.classList.add('hidden');
+  const email = document.getElementById('codeEmail').value.trim();
+  if (!email) { showError('Please enter your email.'); return; }
+  const btn = document.getElementById('sendCodeBtn');
+  btn.disabled = true;
+  btn.textContent = 'Sending…';
+  try {
+    await api('/api/owner-auth/request-code', { method: 'POST', body: JSON.stringify({ email }) });
+    codeLoginEmail = email;
+    document.getElementById('codeSentTo').textContent = `We sent a code to ${email}. Enter it below (check spam if it doesn't show up in a minute).`;
+    document.getElementById('codeLoginStep1').classList.add('hidden');
+    document.getElementById('codeLoginStep2').classList.remove('hidden');
+    document.getElementById('codeInput').focus();
+  } catch (e) {
+    showError(e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Send me a code';
+  }
+}
+
+document.getElementById('sendCodeBtn').addEventListener('click', sendLoginCode);
+document.getElementById('codeEmail').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') sendLoginCode();
+});
+
+document.getElementById('resendCodeBtn').addEventListener('click', async () => {
+  document.getElementById('codeEmail').value = codeLoginEmail;
+  document.getElementById('codeLoginStep2').classList.add('hidden');
+  document.getElementById('codeLoginStep1').classList.remove('hidden');
+});
+
+async function verifyLoginCode() {
+  loginError.classList.add('hidden');
+  const code = document.getElementById('codeInput').value.trim();
+  if (!code) { showError('Please enter the code from your email.'); return; }
+  const btn = document.getElementById('verifyCodeBtn');
+  btn.disabled = true;
+  try {
+    const owner = await api('/api/owner-auth/verify-code', { method: 'POST', body: JSON.stringify({ email: codeLoginEmail, code }) });
+    await showDash(owner);
+  } catch (e) {
+    showError(e.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+document.getElementById('verifyCodeBtn').addEventListener('click', verifyLoginCode);
+document.getElementById('codeInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') verifyLoginCode();
+});
+
 logoutBtn.addEventListener('click', async () => {
   await api('/api/owner-auth/logout', { method: 'POST' });
   checkSession();

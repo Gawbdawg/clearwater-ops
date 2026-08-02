@@ -21,9 +21,30 @@
       <section id="loginView" class="portal-card">
         <h1>Customer login</h1>
         <div id="loginError" class="portal-error hidden"></div>
-        <label>Username<input type="text" id="loginUsername" autocomplete="username" /></label>
-        <label>Password<input type="password" id="loginPassword" autocomplete="current-password" /></label>
-        <button class="btn primary" id="loginBtn">Log in</button>
+
+        <!-- Email + code (default) -->
+        <div id="codeLoginStep1">
+          <p class="portal-sub" style="margin:0 0 8px;">Enter your email and we'll send you a one-time code — no password needed.</p>
+          <label>Email<input type="email" id="codeEmail" autocomplete="email" /></label>
+          <button class="btn primary" id="sendCodeBtn">Send me a code</button>
+        </div>
+        <div id="codeLoginStep2" class="hidden">
+          <p class="portal-sub" id="codeSentTo" style="margin:0 0 8px;"></p>
+          <label>6-digit code<input type="text" id="codeInput" inputmode="numeric" maxlength="6" autocomplete="one-time-code" /></label>
+          <button class="btn primary" id="verifyCodeBtn">Log in</button>
+          <button class="btn small" id="resendCodeBtn" style="margin-top:6px;">Send a new code</button>
+        </div>
+
+        <div style="border-top:1px solid #eef1f2; margin-top:16px; padding-top:12px;">
+          <button class="btn small" id="togglePasswordLoginBtn">Use username &amp; password instead</button>
+        </div>
+
+        <!-- Username + password (fallback for older accounts) -->
+        <div id="passwordLoginFields" class="hidden" style="margin-top:12px;">
+          <label>Username<input type="text" id="loginUsername" autocomplete="username" /></label>
+          <label>Password<input type="password" id="loginPassword" autocomplete="current-password" /></label>
+          <button class="btn primary" id="loginBtn">Log in</button>
+        </div>
       </section>
 
       <!-- Dashboard -->
