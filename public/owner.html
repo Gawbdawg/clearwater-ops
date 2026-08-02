@@ -52,12 +52,6 @@
         <h1 id="welcomeMsg"></h1>
         <p class="portal-sub" id="introText">Request a hot tub service date any time.</p>
 
-        <div id="propertySwitcherRow" class="filter-row hidden">
-          <label>Property
-            <select id="propertySelect"></select>
-          </label>
-        </div>
-
         <div id="addPropertyRow" class="hidden" style="margin:0 0 16px;">
           <button class="btn small" id="showAddPropertyBtn">+ Add a property</button>
         </div>
@@ -112,6 +106,12 @@
 
         <!-- Booking calendar (vacation properties only) -->
         <div id="tab-calendar" class="owner-tab-panel hidden">
+          <div id="propertySwitcherRow" class="filter-row hidden">
+            <label>Property
+              <select id="propertySelect"></select>
+            </label>
+          </div>
+
           <div id="bookingSection">
             <h2>Guest booking dates <span id="bookingSectionPropertyName" style="font-weight:400; color:#5a7078;"></span></h2>
             <p class="portal-sub">Mark date ranges when this property is occupied so we schedule around your guests — either automatically from your Airbnb/VRBO calendar, or by adding dates yourself below.</p>
