@@ -8,10 +8,22 @@ const router = express.Router();
 
 router.use(requireTechAuth);
 
+// Techs tap an upcharge on/off by name only — the price is a back-office detail set
+// in Settings and stays hidden from the tech app everywhere (catalog, job list,
+// add/remove responses). Only the admin dashboard and owner portal show prices.
+function hideAddonPrices(addons) {
+  return (addons || []).map((a) => ({ id: a.id, name: a.name }));
+}
+function hideApptAddonPrices(appt) {
+  if (!appt) return appt;
+  return { ...appt, addons: hideAddonPrices(appt.addons) };
+}
+
 // Read-only catalog of upcharges a tech can attach to a job (e.g. grill cleaning,
 // window spray) — managed by the admin in Settings, see routes/addons.js.
 router.get('/addons', (req, res) => {
-  res.json(store.getAll('addons').sort((a, b) => a.name.localeCompare(b.name)));
+  const catalog = store.getAll('addons').sort((a, b) => a.name.localeCompare(b.name));
+  res.json(hideAddonPrices(catalog));
 });
 
 // Only this technician's appointments — today and upcoming by default, or a specific date via ?date=
@@ -39,6 +51,7 @@ router.get('/appointments', (req, res) => {
       customerEquipment: customer ? customer.equipment : null,
       lat: customer ? customer.lat : undefined,
       lng: customer ? customer.lng : undefined,
+      addons: hideAddonPrices(a.addons),
     };
   });
 
@@ -76,7 +89,7 @@ router.put('/appointments/:id/status', (req, res) => {
   }
   const updated = store.update('appointments', req.params.id, { status });
   maybeCreateInvoiceForCompletedAppointment(updated);
-  res.json(updated);
+  res.json(hideApptAddonPrices(updated));
 });
 
 // Attach one upcharge/add-on to one of this technician's own jobs (e.g. tapping
@@ -91,10 +104,10 @@ router.post('/appointments/:id/addons', (req, res) => {
   const addon = store.getById('addons', req.body.addonId);
   if (!addon) return res.status(404).json({ error: 'Add-on not found' });
   const existing = appt.addons || [];
-  if (existing.some((a) => a.id === addon.id)) return res.json(appt);
+  if (existing.some((a) => a.id === addon.id)) return res.json(hideApptAddonPrices(appt));
   const addons = [...existing, { id: addon.id, name: addon.name, price: addon.price }];
   const updated = store.update('appointments', req.params.id, { addons });
-  res.json(updated);
+  res.json(hideApptAddonPrices(updated));
 });
 
 // Attach a one-off upcharge that isn't in the catalog (e.g. "Replaced a filter, $15")
@@ -113,7 +126,7 @@ router.post('/appointments/:id/addons/custom', (req, res) => {
   const entry = { id: `custom-${Date.now()}`, name, price };
   const addons = [...(appt.addons || []), entry];
   const updated = store.update('appointments', req.params.id, { addons });
-  res.json(updated);
+  res.json(hideApptAddonPrices(updated));
 });
 
 // Remove an upcharge that was added by mistake.
@@ -124,7 +137,7 @@ router.delete('/appointments/:id/addons/:addonId', (req, res) => {
   }
   const addons = (appt.addons || []).filter((a) => String(a.id) !== req.params.addonId);
   const updated = store.update('appointments', req.params.id, { addons });
-  res.json(updated);
+  res.json(hideApptAddonPrices(updated));
 });
 
 // Upload a before/after photo for one of this technician's own jobs.

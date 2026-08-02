@@ -85,19 +85,18 @@ function renderAddons(j) {
   const attached = j.addons || [];
   const attachedIds = attached.map((a) => a.id);
   const customAttached = attached.filter((a) => String(a.id).startsWith('custom-'));
-  const total = attached.reduce((sum, a) => sum + (Number(a.price) || 0), 0);
   return `
     <div class="job-addons">
-      <div class="job-meta" style="margin-bottom:4px;">Upcharges${total ? ` — +$${total.toFixed(2)} added` : ''}</div>
+      <div class="job-meta" style="margin-bottom:4px;">Upcharges</div>
       <div class="job-addon-chips">
         ${addonsCatalog.map((a) => `
           <button class="addon-chip ${attachedIds.includes(a.id) ? 'added' : ''}" onclick="toggleAddon(${j.id}, ${a.id}, ${attachedIds.includes(a.id)})">
-            ${attachedIds.includes(a.id) ? '✓ ' : '+ '}${a.name} $${Number(a.price).toFixed(2)}
+            ${attachedIds.includes(a.id) ? '✓ ' : '+ '}${a.name}
           </button>
         `).join('')}
         ${customAttached.map((a) => `
           <button class="addon-chip added" onclick="removeCustomAddon(${j.id}, '${a.id}')">
-            ✓ ${a.name} $${Number(a.price).toFixed(2)}
+            ✓ ${a.name}
           </button>
         `).join('')}
         <button class="addon-chip" onclick="addCustomAddon(${j.id})">+ Other…</button>
