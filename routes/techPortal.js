@@ -4,19 +4,18 @@ const { requireTechAuth, sanitizeTechnician } = require('../lib/auth');
 const { orderStopsByRoute } = require('../lib/routeOptimizer');
 const { savePhoto, deletePhoto } = require('../lib/uploads');
 const { syncInvoiceForCompletedAppointment } = require('../lib/autoInvoice');
-const { sendSms, carrierGatewayAddress } = require('../lib/sms');
 const { sendEmail } = require('../lib/mailer');
 const router = express.Router();
 
 router.use(requireTechAuth);
 
-// Lets a tech correct their own phone number or set their carrier (for free
-// carrier-gateway texting when Twilio isn't configured, see lib/sms.js) — deliberately
-// narrow, just those two fields, so this can't be used to touch login credentials.
+// Lets a tech correct their own email or phone (used for "email me my route" below and
+// general contact info) — deliberately narrow, just those two fields, so this can't be
+// used to touch login credentials.
 router.put('/me', (req, res) => {
   const updates = {};
+  if (req.body.email !== undefined) updates.email = req.body.email;
   if (req.body.phone !== undefined) updates.phone = req.body.phone;
-  if (req.body.carrier !== undefined) updates.carrier = req.body.carrier;
   const updated = store.update('technicians', req.session.technicianId, updates);
   if (!updated) return res.status(404).json({ error: 'Technician not found' });
   res.json(sanitizeTechnician(updated));
@@ -195,17 +194,21 @@ router.delete('/appointments/:id/photos/:photoId', (req, res) => {
   res.json(updated);
 });
 
-// Texts the technician's own phone their route-ordered stops for one day (defaults to
-// today) — same nearest-neighbor ordering from the shop used everywhere else in the
-// app, just triggered by the tech themselves instead of the admin copying/pasting a
-// message from the Daily Schedule tab. Uses lib/sms's same Twilio integration (and its
-// dry-run console fallback if Twilio isn't configured yet).
+// Emails the technician their own route-ordered stops for one day (defaults to today)
+// — same nearest-neighbor ordering from the shop used everywhere else in the app, just
+// triggered by the tech themselves instead of the admin copying/pasting a message from
+// the Daily Schedule tab. Uses lib/mailer's existing email setup (and its dry-run
+// console fallback if that isn't configured yet). Deliberately email-only — carrier
+// email-to-SMS gateways used to be a free way to land this as a real text, but AT&T
+// shut theirs down in June 2025, T-Mobile's quietly stopped delivering in late 2024,
+// and Verizon's has an announced shutdown for March 2027, so that approach isn't
+// reliable enough to keep around.
 router.post('/text-my-route', async (req, res) => {
   const technicianId = req.session.technicianId;
   const tech = store.getById('technicians', technicianId);
   if (!tech) return res.status(404).json({ error: 'Technician not found' });
-  if (!tech.phone) {
-    return res.status(400).json({ error: 'No phone number is on file for your account yet — ask the admin to add one under Technicians.' });
+  if (!tech.email) {
+    return res.status(400).json({ error: 'No email is on file for your account yet — add one below, or ask the admin to add one under Technicians.' });
   }
 
   const date = req.body.date || new Date().toISOString().slice(0, 10);
@@ -248,26 +251,8 @@ router.post('/text-my-route', async (req, res) => {
   }
 
   try {
-    const smsResult = await sendSms({ to: tech.phone, body: text });
-    if (!smsResult.dryRun) {
-      return res.json({ sent: true, method: 'sms', date });
-    }
-
-    // Twilio isn't configured — fall back to the tech's carrier email-to-SMS gateway
-    // if they've set one (see lib/sms.js#CARRIER_GATEWAYS), which rides on whatever
-    // email sending is already configured (lib/mailer.js) at no extra cost.
-    if (tech.carrier) {
-      const gatewayAddress = carrierGatewayAddress(tech.phone, tech.carrier);
-      if (gatewayAddress) {
-        const emailResult = await sendEmail({ to: gatewayAddress, subject: 'Route', text });
-        if (!emailResult.dryRun) {
-          return res.json({ sent: true, method: 'carrier-gateway', date });
-        }
-      }
-    }
-
-    // Neither Twilio nor email is configured — same dry-run behavior as before.
-    res.json({ sent: true, dryRun: true, date });
+    const result = await sendEmail({ to: tech.email, subject: `Your Clear Water route — ${date}`, text });
+    res.json({ sent: true, dryRun: !!result.dryRun, date });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }

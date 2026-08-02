@@ -38,8 +38,7 @@ async function showJobs(tech) {
   jobsView.classList.remove('hidden');
   logoutBtn.style.display = '';
   document.getElementById('welcomeMsg').textContent = `Hi ${tech.name}`;
-  document.getElementById('myPhoneInput').value = tech.phone || '';
-  document.getElementById('myCarrierInput').value = tech.carrier || '';
+  document.getElementById('myEmailInput').value = tech.email || '';
   try {
     addonsCatalog = await api('/api/tech/addons');
   } catch (e) {
@@ -238,10 +237,12 @@ document.getElementById('jobsBackToUpcomingBtn').addEventListener('click', () =>
   loadJobs();
 });
 
-// ---- Text me my route ----
+// ---- Email me my route ----
 // Sends the same route-ordered stop list the admin can copy/paste from the Daily
-// Schedule tab, but straight to the tech's own phone — defaults to today, or whatever
-// day is currently being viewed (via the date picker above).
+// Schedule tab, but straight to the tech's own email — defaults to today, or whatever
+// day is currently being viewed (via the date picker above). Email-only on purpose —
+// the old "free carrier-gateway texting" fallback isn't reliable enough to keep around
+// (AT&T shut theirs down in June 2025, T-Mobile's and Verizon's are in the same boat).
 document.getElementById('textMyRouteBtn').addEventListener('click', async () => {
   const statusEl = document.getElementById('textMyRouteStatus');
   const btn = document.getElementById('textMyRouteBtn');
@@ -250,24 +251,18 @@ document.getElementById('textMyRouteBtn').addEventListener('click', async () => 
   statusEl.textContent = 'Sending…';
   try {
     const result = await api('/api/tech/text-my-route', { method: 'POST', body: JSON.stringify({ date }) });
-    if (result.method === 'sms') {
-      statusEl.textContent = `Texted! Check your phone for ${niceDate(date)}'s route.`;
-    } else if (result.method === 'carrier-gateway') {
-      statusEl.textContent = `Sent via your carrier — should land as a text any moment for ${niceDate(date)}.`;
-    } else {
-      statusEl.textContent = currentTech && currentTech.carrier
-        ? `Route for ${niceDate(date)} logged (neither texting nor email is set up on the shop's end yet — ask the admin).`
-        : `Route for ${niceDate(date)} logged (texting isn't set up yet — pick your carrier below for free texting, or ask the admin).`;
-    }
+    statusEl.textContent = result.dryRun
+      ? `Route for ${niceDate(date)} logged (email isn't set up yet — ask the admin).`
+      : `Emailed! Check your inbox for ${niceDate(date)}'s route.`;
   } catch (e) {
     statusEl.textContent = '';
-    alert('Could not text the route: ' + e.message);
+    alert('Could not email the route: ' + e.message);
   } finally {
     btn.disabled = false;
   }
 });
 
-// ---- Texting settings (phone + carrier, for the free carrier-gateway fallback) ----
+// ---- Route email settings ----
 document.getElementById('textingSettingsToggle').addEventListener('click', (e) => {
   e.preventDefault();
   document.getElementById('textingSettings').classList.toggle('hidden');
@@ -276,12 +271,11 @@ document.getElementById('textingSettingsToggle').addEventListener('click', (e) =
 document.getElementById('saveTextingSettingsBtn').addEventListener('click', async () => {
   const statusEl = document.getElementById('myTextingSettingsStatus');
   const btn = document.getElementById('saveTextingSettingsBtn');
-  const phone = document.getElementById('myPhoneInput').value;
-  const carrier = document.getElementById('myCarrierInput').value;
+  const email = document.getElementById('myEmailInput').value;
   btn.disabled = true;
   statusEl.textContent = 'Saving…';
   try {
-    const updated = await api('/api/tech/me', { method: 'PUT', body: JSON.stringify({ phone, carrier }) });
+    const updated = await api('/api/tech/me', { method: 'PUT', body: JSON.stringify({ email }) });
     currentTech = updated;
     statusEl.textContent = 'Saved.';
   } catch (e) {
