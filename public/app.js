@@ -1735,11 +1735,42 @@ async function loadReports() {
 
   const serviceSelect = document.getElementById('missingInvoiceServiceSelect');
   serviceSelect.innerHTML = state.services.length
-    ? state.services.map((s) => `<option value="${s.id}">${s.name} — ${money(s.defaultPrice)}</option>`).join('')
+    ? state.services.map((s) => `<option value="${s.id}">${s.name} — ${serviceFreqSummary(s)}</option>`).join('')
     : '<option value="">No services in your catalog yet — add one in Settings first</option>';
+  renderMissingInvoiceTierSelect();
   document.getElementById('missingInvoiceSelectAll').checked = false;
   updateMissingInvoiceToolbar();
 }
+
+// Frequency-priced services don't have one price — resolvePrice() normally figures out
+// which tier applies from the CUSTOMER's on-file service frequency, but that's exactly
+// what's usually missing on jobs that ended up unbilled in the first place. So when the
+// picked service is frequency-priced, a second dropdown appears to explicitly choose
+// which rate this whole batch should bill at (see lib/autoInvoice.js#
+// computeBillForWithTier) — otherwise these would silently create $0 invoices, or none
+// at all.
+const TIER_OPTION_LABELS = { weekly: 'Weekly rate', biweekly: 'Biweekly rate', every4weeks: 'Monthly rate', vacationFlat: 'Vacation rental rate (flat)' };
+
+function renderMissingInvoiceTierSelect() {
+  const serviceSelect = document.getElementById('missingInvoiceServiceSelect');
+  const tierSelect = document.getElementById('missingInvoiceTierSelect');
+  const service = state.services.find((s) => String(s.id) === String(serviceSelect.value));
+  if (!service || service.pricingMode !== 'frequency') {
+    tierSelect.classList.add('hidden');
+    tierSelect.innerHTML = '';
+    return;
+  }
+  const rates = service.frequencyPrices || {};
+  const options = ['weekly', 'biweekly', 'every4weeks', 'vacationFlat']
+    .filter((t) => rates[t] !== undefined && rates[t] !== null && rates[t] !== '')
+    .map((t) => `<option value="${t}">${TIER_OPTION_LABELS[t]} — ${money(rates[t])}</option>`);
+  tierSelect.innerHTML = options.length
+    ? options.join('')
+    : '<option value="">No rates set for this service — add them in Settings first</option>';
+  tierSelect.classList.remove('hidden');
+}
+
+document.getElementById('missingInvoiceServiceSelect').addEventListener('change', renderMissingInvoiceTierSelect);
 
 window.toggleAllMissingInvoice = (checkbox) => {
   document.querySelectorAll('.missing-invoice-check').forEach((c) => { c.checked = checkbox.checked; });
@@ -1760,11 +1791,17 @@ window.assignServiceToMissingInvoices = async () => {
   if (!checked.length) return;
   if (!serviceId) { alert('Add a service in Settings first, or select one to bill these against.'); return; }
   const service = state.services.find((s) => String(s.id) === String(serviceId));
-  if (!confirm(`Bill ${checked.length} completed job(s) as "${service ? service.name : 'this service'}" and create their invoices?`)) return;
+  let tier;
+  if (service && service.pricingMode === 'frequency') {
+    tier = document.getElementById('missingInvoiceTierSelect').value;
+    if (!tier) { alert('This service has frequency-based pricing — pick which rate to bill these jobs at.'); return; }
+  }
+  const rateNote = tier ? ` at the ${TIER_OPTION_LABELS[tier].toLowerCase()}` : '';
+  if (!confirm(`Bill ${checked.length} completed job(s) as "${service ? service.name : 'this service'}"${rateNote} and create their invoices?`)) return;
   try {
     const result = await api('/api/appointments/bulk-assign-service', {
       method: 'POST',
-      body: JSON.stringify({ appointmentIds: checked, serviceId }),
+      body: JSON.stringify({ appointmentIds: checked, serviceId, tier }),
     });
     await loadReports();
     alert(`Done — ${result.invoicesCreated} new invoice(s) created for ${result.updatedCount} job(s). Check the Invoices tab.`);
@@ -1895,7 +1932,7 @@ async function loadSettingsTab() {
 
   const defaultServiceSelect = document.getElementById('defaultServiceSelect');
   defaultServiceSelect.innerHTML = '<option value="">None set — these jobs won\'t auto-invoice</option>'
-    + state.services.map((s) => `<option value="${s.id}" ${String(s.id) === String(settings.defaultServiceId) ? 'selected' : ''}>${s.name} — ${money(s.defaultPrice)}</option>`).join('');
+    + state.services.map((s) => `<option value="${s.id}" ${String(s.id) === String(settings.defaultServiceId) ? 'selected' : ''}>${s.name} — ${serviceFreqSummary(s)}</option>`).join('');
   document.getElementById('defaultServiceStatus').textContent = '';
 
   loadAdminAccounts();

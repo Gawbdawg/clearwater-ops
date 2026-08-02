@@ -1,7 +1,7 @@
 const express = require('express');
 const store = require('../lib/store');
 const { sendSms } = require('../lib/sms');
-const { syncInvoiceForCompletedAppointment } = require('../lib/autoInvoice');
+const { syncInvoiceForCompletedAppointment, createOrSyncInvoiceWithTier } = require('../lib/autoInvoice');
 const { makeCustomerMatcher } = require('../lib/customerMatch');
 const { futureDates } = require('../lib/recurrence');
 const router = express.Router();
@@ -98,12 +98,25 @@ router.put('/:id', (req, res) => {
 // invoice" table) — picks one service for all of them at once and re-runs invoicing,
 // rather than making the admin open and edit each appointment individually.
 router.post('/bulk-assign-service', (req, res) => {
-  const { appointmentIds, serviceId } = req.body;
+  const { appointmentIds, serviceId, tier } = req.body;
   if (!Array.isArray(appointmentIds) || !appointmentIds.length) {
     return res.status(400).json({ error: 'appointmentIds must be a non-empty array' });
   }
   const service = serviceId ? store.getById('services', serviceId) : null;
   if (!service) return res.status(400).json({ error: 'A valid serviceId is required' });
+
+  // Frequency-priced services need to know WHICH rate to bill this batch at — the
+  // normal per-customer resolution (via customer.serviceFrequency) is exactly what's
+  // usually missing on jobs that ended up unbilled in the first place, so falling
+  // through silently here would create $0 invoices (or none at all — see
+  // maybeCreateInvoiceForCompletedAppointment's !bill.total guard) instead of the real
+  // price. Require an explicit tier and validate it's actually a rate this service has.
+  if (service.pricingMode === 'frequency') {
+    const rates = service.frequencyPrices || {};
+    if (!tier || rates[tier] === undefined || rates[tier] === null || rates[tier] === '') {
+      return res.status(400).json({ error: 'This service has frequency-based pricing — pick which rate to bill these jobs at.' });
+    }
+  }
 
   let updatedCount = 0;
   let invoicesCreated = 0;
@@ -113,7 +126,9 @@ router.post('/bulk-assign-service', (req, res) => {
     const hadInvoice = store.getAll('invoices').some((i) => i.appointmentId === appt.id);
     const updated = store.update('appointments', id, { serviceId: service.id });
     updatedCount += 1;
-    const invoice = syncInvoiceForCompletedAppointment(updated);
+    const invoice = service.pricingMode === 'frequency'
+      ? createOrSyncInvoiceWithTier(updated, service, tier)
+      : syncInvoiceForCompletedAppointment(updated);
     if (invoice && !hadInvoice) invoicesCreated += 1;
   });
 

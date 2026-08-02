@@ -290,9 +290,10 @@
         <div class="profile-section" style="background:#fff; box-shadow:0 1px 3px rgba(0,0,0,0.06); margin-top:16px;">
           <h3>Completed jobs missing an invoice</h3>
           <p class="portal-sub" style="margin:0 0 8px;">These jobs were marked complete but never got invoiced — usually because they weren't linked to a service in the catalog when they were created. Select the ones that should have been billed for the same service, pick that service below, and apply it to all of them at once.</p>
-          <div id="missingInvoiceToolbar" class="filter-row hidden" style="align-items:center; gap:8px; margin:0 0 10px;">
+          <div id="missingInvoiceToolbar" class="filter-row hidden" style="align-items:center; gap:8px; margin:0 0 10px; flex-wrap:wrap;">
             <span id="missingInvoiceSelectedCount" style="font-size:13px; color:#46606b;"></span>
-            <select id="missingInvoiceServiceSelect" style="flex:1; max-width:280px;"></select>
+            <select id="missingInvoiceServiceSelect" style="flex:1; max-width:320px;"></select>
+            <select id="missingInvoiceTierSelect" class="hidden" style="max-width:220px;"></select>
             <button class="btn primary small" id="assignMissingInvoiceServiceBtn" onclick="assignServiceToMissingInvoices()">Assign & invoice selected</button>
           </div>
           <table class="data-table">
