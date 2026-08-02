@@ -617,23 +617,43 @@ document.getElementById('addRequestBtn').addEventListener('click', async () => {
   }
 });
 
-// ---- Service calendar (month grid of the selected property's own scheduled/
-// completed visits and pending requests — click an open day to request service
-// directly, instead of typing a date into a plain field) ----
+// ---- Service calendar (month grid of scheduled/completed visits and pending
+// requests, filterable by property or "All properties" — click an open day to
+// request service directly, instead of typing a date into a plain field) ----
 let svcCalMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
 let svcCalAppts = [];
 let svcCalRequests = [];
+let svcCalPropertyId = 'all';
 let svcCalSelectedDate = null;
 let svcCalRequestAddonIds = new Set();
+let svcCalRequestPropertyId = null;
+
+function svcCalPropertyName(propertyId) {
+  const p = properties.find((x) => x.id === propertyId);
+  return p ? p.name : '';
+}
 
 async function loadOwnerCalendar() {
-  document.getElementById('svcCalPropertyName').textContent = properties.length > 1 ? `— ${selectedProperty().name}` : '';
+  const filterRow = document.getElementById('svcCalPropertyFilterRow');
+  const filterSelect = document.getElementById('svcCalPropertyFilter');
+  filterRow.classList.toggle('hidden', properties.length <= 1);
+  if (properties.length > 1) {
+    const prevValue = filterSelect.value || 'all';
+    filterSelect.innerHTML = '<option value="all">All properties</option>'
+      + properties.map((p) => `<option value="${p.id}">${p.name}</option>`).join('');
+    filterSelect.value = [...filterSelect.options].some((o) => o.value === prevValue) ? prevValue : 'all';
+    svcCalPropertyId = filterSelect.value === 'all' ? 'all' : Number(filterSelect.value);
+  } else {
+    svcCalPropertyId = 'all';
+  }
+
   const [appts, requests] = await Promise.all([
     api('/api/owner/appointments?all=1'),
     api('/api/owner/service-requests'),
   ]);
-  svcCalAppts = appts.filter((a) => a.propertyId === selectedPropertyId);
-  svcCalRequests = requests.filter((r) => r.customerId === selectedPropertyId && r.status === 'pending');
+  svcCalAppts = svcCalPropertyId === 'all' ? appts : appts.filter((a) => a.propertyId === svcCalPropertyId);
+  svcCalRequests = (svcCalPropertyId === 'all' ? requests : requests.filter((r) => r.customerId === svcCalPropertyId))
+    .filter((r) => r.status === 'pending');
   svcCalSelectedDate = null;
   document.getElementById('svcCalDayPanel').classList.add('hidden');
   renderOwnerCalendarGrid();
@@ -649,6 +669,7 @@ function renderOwnerCalendarGrid() {
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const gridStart = new Date(year, month, 1 - firstDayOfWeek);
 
+  const showPropertyLabel = svcCalPropertyId === 'all' && properties.length > 1;
   const apptsByDate = {};
   svcCalAppts.forEach((a) => { (apptsByDate[a.date] = apptsByDate[a.date] || []).push(a); });
   const requestsByDate = {};
@@ -668,13 +689,15 @@ function renderOwnerCalendarGrid() {
     const inMonth = cellDate.getMonth() === month;
     const dayAppts = apptsByDate[dateStr] || [];
     const dayRequests = requestsByDate[dateStr] || [];
-    const apptChips = dayAppts.slice(0, 2).map((a) => `<div class="cal-appt-chip ${a.status}">${a.serviceType || 'Service'}</div>`).join('');
-    const requestChips = dayAppts.length === 0 ? dayRequests.slice(0, 2).map(() =>
-      '<div class="cal-appt-chip" style="background:#fdf3e0; color:#8a5b00; border-left-color:#c98a00;">Requested</div>'
+    const apptChips = dayAppts.slice(0, 2).map((a) =>
+      `<div class="cal-appt-chip ${a.status}">${a.serviceType || 'Service'}${showPropertyLabel ? ' · ' + a.propertyName : ''}</div>`
+    ).join('');
+    const requestChips = dayAppts.length === 0 ? dayRequests.slice(0, 2).map((r) =>
+      `<div class="cal-appt-chip" style="background:#fdf3e0; color:#8a5b00; border-left-color:#c98a00;">Requested${showPropertyLabel ? ' · ' + svcCalPropertyName(r.customerId) : ''}</div>`
     ).join('') : '';
     const isSelected = svcCalSelectedDate === dateStr;
     html += `
-      <div class="cal-cell ${inMonth ? '' : 'other-month'} ${dateStr === today ? 'is-today' : ''}" style="${isSelected ? 'outline:2px solid #0b5f7a; outline-offset:-2px;' : ''}" onclick="onSvcCalDayClick('${dateStr}')">
+      <div class="cal-cell ${inMonth ? '' : 'other-month'} ${dateStr === today ? 'is-today' : ''}" style="${isSelected ? 'background:#e3f1fb; border-color:#0b5f7a;' : ''}" onclick="onSvcCalDayClick('${dateStr}')">
         <div class="cal-daynum">${cellDate.getDate()}</div>
         ${apptChips}${requestChips}
       </div>
@@ -684,12 +707,19 @@ function renderOwnerCalendarGrid() {
   document.getElementById('svcCalGrid').innerHTML = html;
 }
 
+document.getElementById('svcCalPropertyFilter').addEventListener('change', (e) => {
+  svcCalPropertyId = e.target.value === 'all' ? 'all' : Number(e.target.value);
+  loadOwnerCalendar();
+});
+
 window.onSvcCalDayClick = (dateStr) => {
   svcCalSelectedDate = dateStr;
   renderOwnerCalendarGrid();
   const panel = document.getElementById('svcCalDayPanel');
   panel.classList.remove('hidden');
+  if (typeof panel.scrollIntoView === 'function') panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 
+  const showPropertyLabel = svcCalPropertyId === 'all' && properties.length > 1;
   const dayAppts = svcCalAppts.filter((a) => a.date === dateStr);
   const dayRequests = svcCalRequests.filter((r) => r.requestedDate === dateStr);
 
@@ -700,6 +730,7 @@ window.onSvcCalDayClick = (dateStr) => {
           <strong>${niceDate(a.date)}</strong>
           <span class="badge ${a.status}">${a.status}</span>
         </div>
+        ${showPropertyLabel ? `<div class="job-meta">${a.propertyName}</div>` : ''}
         ${a.serviceType ? `<div class="job-meta">${a.serviceType}</div>` : ''}
         ${a.addons && a.addons.length ? `<div class="job-meta">Extras: ${a.addons.map((x) => x.name).join(', ')}</div>` : ''}
         ${a.status === 'scheduled' ? `<button class="btn small danger" style="margin-top:6px;" onclick="cancelVisit(${a.id}, '${a.date}', '${a.startTime || ''}')">Cancel service</button>` : ''}
@@ -715,6 +746,7 @@ window.onSvcCalDayClick = (dateStr) => {
           <strong>${niceDate(r.requestedDate)}</strong>
           <span class="badge draft">Requested — pending confirmation</span>
         </div>
+        ${showPropertyLabel ? `<div class="job-meta">${svcCalPropertyName(r.customerId)}</div>` : ''}
         ${r.notes ? `<div class="job-meta">${r.notes}</div>` : ''}
         <button class="btn small danger" style="margin-top:6px;" onclick="cancelSvcCalRequest(${r.id})">Cancel request</button>
       </div>
@@ -728,6 +760,7 @@ window.onSvcCalDayClick = (dateStr) => {
   }
 
   svcCalRequestAddonIds = new Set();
+  svcCalRequestPropertyId = svcCalPropertyId === 'all' ? properties[0].id : svcCalPropertyId;
   renderSvcCalRequestPanel(dateStr);
 };
 
@@ -740,6 +773,13 @@ window.cancelSvcCalRequest = async (requestId) => {
 
 function renderSvcCalRequestPanel(dateStr) {
   const panel = document.getElementById('svcCalDayPanel');
+  const propertyPickerHtml = (svcCalPropertyId === 'all' && properties.length > 1) ? `
+    <label>Property
+      <select id="svcCalRequestPropertySelect">
+        ${properties.map((p) => `<option value="${p.id}" ${p.id === svcCalRequestPropertyId ? 'selected' : ''}>${p.name}</option>`).join('')}
+      </select>
+    </label>
+  ` : '';
   const addonsHtml = addonsCatalog.length ? `
     <div class="job-addon-chips" style="margin:6px 0;">
       ${addonsCatalog.map((a) => `
@@ -751,6 +791,7 @@ function renderSvcCalRequestPanel(dateStr) {
   ` : '';
   panel.innerHTML = `
     <h3 style="margin:0 0 4px; font-size:15px;">Request service for ${niceDate(dateStr)}</h3>
+    ${propertyPickerHtml}
     <label>Notes <span style="font-weight:400; color:#7a8f97;">(optional)</span><input type="text" id="svcCalRequestNotes" placeholder="e.g. extra clean, repair" /></label>
     ${addonsHtml}
     <div id="svcCalRequestError" class="portal-error hidden"></div>
@@ -759,6 +800,8 @@ function renderSvcCalRequestPanel(dateStr) {
       <button class="btn small" id="svcCalCancelRequestFormBtn">Never mind</button>
     </div>
   `;
+  const propSelect = document.getElementById('svcCalRequestPropertySelect');
+  if (propSelect) propSelect.addEventListener('change', () => { svcCalRequestPropertyId = Number(propSelect.value); });
   document.getElementById('svcCalCancelRequestFormBtn').addEventListener('click', () => {
     document.getElementById('svcCalDayPanel').classList.add('hidden');
     svcCalSelectedDate = null;
@@ -771,7 +814,7 @@ function renderSvcCalRequestPanel(dateStr) {
       const notes = document.getElementById('svcCalRequestNotes').value;
       await api('/api/owner/service-requests', {
         method: 'POST',
-        body: JSON.stringify({ propertyId: selectedPropertyId, requestedDate: dateStr, notes, addonIds: Array.from(svcCalRequestAddonIds) }),
+        body: JSON.stringify({ propertyId: svcCalRequestPropertyId, requestedDate: dateStr, notes, addonIds: Array.from(svcCalRequestAddonIds) }),
       });
       document.getElementById('svcCalDayPanel').classList.add('hidden');
       svcCalSelectedDate = null;

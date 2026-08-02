@@ -166,8 +166,13 @@
 
         <!-- Service calendar -->
         <div id="tab-svccal" class="owner-tab-panel hidden">
-          <h2>Calendar <span id="svcCalPropertyName" style="font-weight:400; color:#5a7078;"></span></h2>
+          <h2>Calendar</h2>
           <p class="portal-sub">Blue days are scheduled, green are completed, amber are pending requests. Click any open day to request service.</p>
+          <div id="svcCalPropertyFilterRow" class="filter-row hidden">
+            <label>Property
+              <select id="svcCalPropertyFilter"></select>
+            </label>
+          </div>
           <div class="cal-nav">
             <button class="btn" id="svcCalPrevBtn">‹</button>
             <h2 id="svcCalMonthLabel"></h2>
