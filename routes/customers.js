@@ -19,6 +19,7 @@ function createOwnerAccount({ name, email, phone, username, password }) {
     phone: phone || '',
     username: username || '',
     passwordHash: password ? hashPassword(password) : '',
+    newsletterSubscribed: true,
   });
   return owner.id;
 }

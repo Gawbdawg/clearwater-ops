@@ -17,6 +17,14 @@ function myProperty(req, propertyId) {
   return property;
 }
 
+// Lets an owner opt in/out of newsletter emails at any time, regardless of the default
+// set when their account was created (e.g. from their signed waiver) — every send
+// should be easy to back out of.
+router.put('/newsletter-subscription', (req, res) => {
+  const updated = store.update('owners', req.session.ownerId, { newsletterSubscribed: !!req.body.subscribed });
+  res.json({ newsletterSubscribed: updated.newsletterSubscribed });
+});
+
 // Read-only catalog of upcharges an owner can ask to have included with a service
 // request (e.g. grill cleaning, window spray) — managed by the admin in Settings, see
 // routes/addons.js.

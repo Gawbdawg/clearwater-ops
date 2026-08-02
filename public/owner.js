@@ -47,6 +47,7 @@ async function showDash(owner) {
   dashView.classList.remove('hidden');
   logoutBtn.style.display = '';
   document.getElementById('welcomeMsg').textContent = `Hi ${owner.name}`;
+  document.getElementById('newsletterToggle').checked = owner.newsletterSubscribed !== false;
 
   properties = await api('/api/owner/properties');
   try {
@@ -574,6 +575,22 @@ document.getElementById('codeInput').addEventListener('keydown', (e) => {
 logoutBtn.addEventListener('click', async () => {
   await api('/api/owner-auth/logout', { method: 'POST' });
   checkSession();
+});
+
+// ---- Newsletter opt in/out ----
+document.getElementById('newsletterToggle').addEventListener('change', async (e) => {
+  const statusEl = document.getElementById('newsletterToggleStatus');
+  const subscribed = e.target.checked;
+  e.target.disabled = true;
+  try {
+    await api('/api/owner/newsletter-subscription', { method: 'PUT', body: JSON.stringify({ subscribed }) });
+    statusEl.textContent = subscribed ? 'Saved — you\'re on the list.' : "Saved — you're unsubscribed.";
+  } catch (err) {
+    e.target.checked = !subscribed;
+    statusEl.textContent = 'Could not save that — please try again.';
+  } finally {
+    e.target.disabled = false;
+  }
 });
 
 // ---- Owner self-service: add a property ----

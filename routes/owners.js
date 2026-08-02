@@ -15,7 +15,7 @@ router.get('/', (req, res) => {
 });
 
 router.post('/', (req, res) => {
-  const { name, email, phone, username, password, customPricing, billingMode } = req.body;
+  const { name, email, phone, username, password, customPricing, billingMode, newsletterSubscribed } = req.body;
   if (!name) return res.status(400).json({ error: 'Name is required' });
   if (username) {
     const existing = store.getAll('owners').find((o) => (o.username || '').toLowerCase() === username.toLowerCase());
@@ -35,6 +35,10 @@ router.post('/', (req, res) => {
     passwordHash: password ? hashPassword(password) : '',
     customPricing: cleanedPricing,
     billingMode: billingMode === 'monthly' ? 'monthly' : 'perJob',
+    // Defaults to subscribed since the plan is to collect this consent as part of the
+    // owner's signed waiver going forward. Admin can flip it off per-owner (or right
+    // here at creation), and owners can also unsubscribe themselves from their portal.
+    newsletterSubscribed: newsletterSubscribed === undefined ? true : !!newsletterSubscribed,
   });
   res.status(201).json(withPropertyCount(owner));
 });
@@ -45,6 +49,7 @@ router.put('/:id', (req, res) => {
   if (name !== undefined) updates.name = name;
   if (email !== undefined) updates.email = email;
   if (phone !== undefined) updates.phone = phone;
+  if (req.body.newsletterSubscribed !== undefined) updates.newsletterSubscribed = !!req.body.newsletterSubscribed;
   if (username !== undefined) {
     if (username) {
       const existing = store.getAll('owners').find(
@@ -130,6 +135,7 @@ router.post('/bulk-create-from-customers', (req, res) => {
       phone: rep.phone || '',
       username: uniqueUsername(usernameBase),
       passwordHash: '', // intentionally no password — set later if/when this owner needs to log in
+      newsletterSubscribed: true,
     });
     ownersCreated += 1;
     groupCustomers.forEach((c) => {
@@ -230,6 +236,7 @@ router.post('/bulk-link-from-text', (req, res) => {
         phone: phone || '',
         username: '',
         passwordHash: '',
+        newsletterSubscribed: true,
       });
       owners = [...owners, owner];
       ownersCreated += 1;

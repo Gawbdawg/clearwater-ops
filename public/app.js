@@ -40,6 +40,7 @@ function loadTab(tab) {
   if (tab === 'requests') loadRequests();
   if (tab === 'reports') loadReports();
   if (tab === 'settings') loadSettingsTab();
+  if (tab === 'newsletter') loadNewsletterTab();
 }
 
 // Portal links shown as hints on the Technicians/Customers/Owners tabs
@@ -562,6 +563,10 @@ function ownerForm(o = {}) {
         <option value="monthly" ${o.billingMode === 'monthly' ? 'selected' : ''}>Monthly combined (bundle all jobs into one invoice at month end)</option>
       </select>
     </label>
+    <label style="flex-direction:row; align-items:center; gap:8px;">
+      <input type="checkbox" id="f_onewsletter" ${o.newsletterSubscribed !== false ? 'checked' : ''} style="width:auto;" />
+      <span>Subscribed to newsletter updates</span>
+    </label>
 
     <div style="display:flex; flex-direction: column; gap: 10px; border-top: 1px solid var(--border); padding-top: 12px;">
       <div style="font-size:13px; font-weight:600; color:#33505c;">Custom pricing (optional)</div>
@@ -589,6 +594,7 @@ function readOwnerForm() {
     username: document.getElementById('f_ousername').value,
     password: document.getElementById('f_opassword').value,
     billingMode: document.getElementById('f_obillingMode').value,
+    newsletterSubscribed: document.getElementById('f_onewsletter').checked,
     customPricing,
   };
 }
@@ -1662,6 +1668,54 @@ async function loadReports() {
 }
 
 // ---------- Settings (route optimization depot + geocoding) ----------
+// ---------- Newsletter ----------
+async function loadNewsletterTab() {
+  document.getElementById('newsletterError').classList.add('hidden');
+  document.getElementById('newsletterResult').classList.add('hidden');
+  try {
+    const { count } = await api('/api/newsletter/subscriber-count');
+    document.getElementById('newsletterSubscriberCount').textContent = count;
+  } catch (e) {
+    document.getElementById('newsletterSubscriberCount').textContent = '?';
+  }
+}
+
+document.getElementById('sendNewsletterBtn').addEventListener('click', async () => {
+  const errEl = document.getElementById('newsletterError');
+  const resultEl = document.getElementById('newsletterResult');
+  errEl.classList.add('hidden');
+  resultEl.classList.add('hidden');
+  const subject = document.getElementById('newsletterSubject').value.trim();
+  const message = document.getElementById('newsletterMessage').value.trim();
+  if (!subject || !message) {
+    errEl.textContent = 'Please fill in both a subject and a message.';
+    errEl.classList.remove('hidden');
+    return;
+  }
+  const count = document.getElementById('newsletterSubscriberCount').textContent;
+  if (!confirm(`Send this to ${count} subscribed owner(s)? This can't be undone.`)) return;
+  const btn = document.getElementById('sendNewsletterBtn');
+  btn.disabled = true;
+  btn.textContent = 'Sending…';
+  try {
+    const result = await api('/api/newsletter/send', { method: 'POST', body: JSON.stringify({ subject, message }) });
+    resultEl.textContent = result.failed.length
+      ? `Sent to ${result.sent} of ${result.total}. Failed: ${result.failed.map((f) => f.name).join(', ')}.`
+      : `Sent to all ${result.sent} subscriber(s).`;
+    resultEl.classList.remove('hidden');
+    if (result.failed.length === 0) {
+      document.getElementById('newsletterSubject').value = '';
+      document.getElementById('newsletterMessage').value = '';
+    }
+  } catch (e) {
+    errEl.textContent = e.message || 'Could not send the newsletter.';
+    errEl.classList.remove('hidden');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Send to subscribers';
+  }
+});
+
 async function loadSettingsTab() {
   const settings = await api('/api/settings');
   document.getElementById('googleReviewUrlInput').value = settings.googleReviewUrl || '';

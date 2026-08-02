@@ -83,6 +83,10 @@
           <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
           Reports
         </button>
+        <button class="tab-btn" data-tab="newsletter">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v16H4z"/><path d="M22 6l-10 7L2 6"/></svg>
+          Newsletter
+        </button>
         <button class="tab-btn" data-tab="settings">
           <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
           Settings
@@ -271,6 +275,24 @@
         <div class="profile-section" style="background:#fff; box-shadow:0 1px 3px rgba(0,0,0,0.06); margin-top:16px;">
           <h3>Completed jobs by technician</h3>
           <div id="reportTechBars"></div>
+        </div>
+      </section>
+
+      <!-- Newsletter -->
+      <section id="tab-newsletter" class="tab-panel">
+        <div class="panel-header">
+          <h1>Newsletter</h1>
+        </div>
+        <div class="portal-card" style="max-width:640px; margin:0;">
+          <p class="portal-sub" style="margin:0;">Sends an email to every owner who's subscribed to updates (opted in via their portal, or by default from their signed waiver).</p>
+          <p style="margin:0; font-weight:600;"><span id="newsletterSubscriberCount">—</span> subscribed owner(s) will receive this.</p>
+          <div id="newsletterError" class="portal-error hidden"></div>
+          <div id="newsletterResult" class="portal-sub hidden" style="margin:0;"></div>
+          <label>Subject<input type="text" id="newsletterSubject" placeholder="e.g. Summer hours, a new feature, a seasonal tip" /></label>
+          <label>Message<textarea id="newsletterMessage" rows="10" placeholder="Write your update here..."></textarea></label>
+          <div style="display:flex; gap:8px;">
+            <button class="btn primary" id="sendNewsletterBtn">Send to subscribers</button>
+          </div>
         </div>
       </section>
 
