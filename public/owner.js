@@ -57,17 +57,24 @@ async function showDash(owner) {
   renderRequestAddonOptions();
 
   if (properties.length === 0) {
-    document.getElementById('introText').textContent =
-      "No properties are linked to your account yet — contact Clear Water Spa Service to get set up.";
+    document.getElementById('introText').textContent = "Let's get your property set up so we can start scheduling service.";
     document.getElementById('propertySwitcherRow').classList.add('hidden');
     document.getElementById('ownerTabs').classList.add('hidden');
-    document.getElementById('tab-overview').innerHTML = '';
+    document.getElementById('tab-overview').classList.add('hidden');
     document.getElementById('requestPropertyRow').classList.add('hidden');
     document.getElementById('requestsList').innerHTML = '';
+    document.getElementById('addPropertyRow').classList.add('hidden');
+    document.getElementById('cancelAddPropertyBtn').classList.add('hidden');
+    document.getElementById('addPropertyForm').classList.remove('hidden');
     return;
   }
 
   document.getElementById('introText').textContent = 'Everything about your service and bookings, in one place.';
+  document.getElementById('addPropertyRow').classList.remove('hidden');
+  document.getElementById('addPropertyForm').classList.add('hidden');
+  document.getElementById('cancelAddPropertyBtn').classList.remove('hidden');
+  document.getElementById('ownerTabs').classList.remove('hidden');
+  switchTab('overview');
 
   const hasMultiple = properties.length > 1;
   const switcherRow = document.getElementById('propertySwitcherRow');
@@ -479,6 +486,45 @@ document.getElementById('codeInput').addEventListener('keydown', (e) => {
 logoutBtn.addEventListener('click', async () => {
   await api('/api/owner-auth/logout', { method: 'POST' });
   checkSession();
+});
+
+// ---- Owner self-service: add a property ----
+document.getElementById('showAddPropertyBtn').addEventListener('click', () => {
+  document.getElementById('addPropertyRow').classList.add('hidden');
+  document.getElementById('addPropertyForm').classList.remove('hidden');
+});
+
+document.getElementById('cancelAddPropertyBtn').addEventListener('click', () => {
+  document.getElementById('addPropertyForm').classList.add('hidden');
+  document.getElementById('addPropertyRow').classList.remove('hidden');
+  document.getElementById('addPropertyError').classList.add('hidden');
+});
+
+document.getElementById('saveNewPropertyBtn').addEventListener('click', async () => {
+  const errEl = document.getElementById('addPropertyError');
+  errEl.classList.add('hidden');
+  const name = document.getElementById('apName').value.trim();
+  const address = document.getElementById('apAddress').value.trim();
+  const type = document.getElementById('apType').value;
+  if (!name) {
+    errEl.textContent = 'Please enter a property name.';
+    errEl.classList.remove('hidden');
+    return;
+  }
+  const btn = document.getElementById('saveNewPropertyBtn');
+  btn.disabled = true;
+  try {
+    await api('/api/owner/properties', { method: 'POST', body: JSON.stringify({ name, address, type }) });
+    document.getElementById('apName').value = '';
+    document.getElementById('apAddress').value = '';
+    document.getElementById('apType').value = 'residential';
+    await checkSession();
+  } catch (e) {
+    errEl.textContent = e.message || 'Could not save that property.';
+    errEl.classList.remove('hidden');
+  } finally {
+    btn.disabled = false;
+  }
 });
 
 checkSession();

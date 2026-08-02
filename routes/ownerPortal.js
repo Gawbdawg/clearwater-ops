@@ -3,6 +3,7 @@ const store = require('../lib/store');
 const { requireOwnerAuth } = require('../lib/auth');
 const { syncCustomerCalendar } = require('../lib/icalSync');
 const { maybeCreateCheckoutAppointment } = require('../lib/turnoverSchedule');
+const { geocodeAddress } = require('../lib/geocode');
 const router = express.Router();
 
 router.use(requireOwnerAuth);
@@ -27,6 +28,44 @@ router.get('/properties', (req, res) => {
     .filter((c) => c.ownerId === req.session.ownerId)
     .sort((a, b) => a.name.localeCompare(b.name));
   res.json(properties);
+});
+
+// Lets an owner add their own property from the portal (e.g. on first login, or
+// adding a second hot tub later) instead of waiting on the admin to create it —
+// always attached to their own account; there's no way to pass a different ownerId
+// here. Best-effort geocodes the address right away, same as the admin's customer
+// form, so it's routable as soon as a tech is assigned. A blank/unrecognized address
+// just leaves it unlocated rather than blocking the save.
+router.post('/properties', async (req, res) => {
+  const { name, address, type } = req.body;
+  if (!name || !name.trim()) return res.status(400).json({ error: 'A property name is required' });
+
+  const geo = { lat: null, lng: null, geocodedAddress: '', addressVerified: false };
+  if (address && address.trim()) {
+    try {
+      const { lat, lng, displayName } = await geocodeAddress(address);
+      Object.assign(geo, { lat, lng, geocodedAddress: displayName, addressVerified: true });
+    } catch (err) {
+      // leave geo as the "not located" defaults — a typo or too-new/rural address
+      // shouldn't block the owner from saving their property
+    }
+  }
+
+  const property = store.create('customers', {
+    name: name.trim(),
+    address: address ? address.trim() : '',
+    type: type === 'vacation' ? 'vacation' : 'residential',
+    ownerId: req.session.ownerId,
+    email: '',
+    phone: '',
+    notes: '',
+    icalUrl: '',
+    equipment: null,
+    serviceFrequency: null,
+    customFrequencyDays: null,
+    ...geo,
+  });
+  res.status(201).json(property);
 });
 
 // Read-only view of scheduled/completed service visits across all of this owner's

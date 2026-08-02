@@ -58,6 +58,27 @@
           </label>
         </div>
 
+        <div id="addPropertyRow" class="hidden" style="margin:0 0 16px;">
+          <button class="btn small" id="showAddPropertyBtn">+ Add a property</button>
+        </div>
+
+        <div id="addPropertyForm" class="portal-card hidden" style="max-width:420px; margin:0 0 20px;">
+          <h2 style="margin:0 0 4px; font-size:16px;">Add a property</h2>
+          <div id="addPropertyError" class="portal-error hidden"></div>
+          <label>Property name<input type="text" id="apName" placeholder="e.g. Lake House, Home" /></label>
+          <label>Address <span style="font-weight:400; color:#7a8f97;">(so we can find it)</span><input type="text" id="apAddress" placeholder="Street address" /></label>
+          <label>Type
+            <select id="apType">
+              <option value="residential">Residential — regular recurring service</option>
+              <option value="vacation">Vacation rental — cleaned between guest bookings</option>
+            </select>
+          </label>
+          <div style="display:flex; gap:8px;">
+            <button class="btn primary" id="saveNewPropertyBtn">Save property</button>
+            <button class="btn small hidden" id="cancelAddPropertyBtn">Cancel</button>
+          </div>
+        </div>
+
         <nav class="owner-tabs" id="ownerTabs">
           <button class="owner-tab-btn active" data-tab="overview">Overview</button>
           <button class="owner-tab-btn" data-tab="visits">Visits</button>
