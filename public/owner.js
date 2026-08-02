@@ -466,6 +466,16 @@ function daysBetween(fromStr, toStr) {
   return Math.round((new Date(toStr + 'T00:00:00') - new Date(fromStr + 'T00:00:00')) / 86400000);
 }
 
+// Each distinct stay gets its own color (picked deterministically from the booking's
+// id, so the same stay is always the same color across every week row it spans and
+// across re-renders) instead of coloring by sync source — makes back-to-back or
+// overlapping stays easy to tell apart at a glance.
+const GANTT_COLORS = ['#0b5f7a', '#2f9e44', '#c98a00', '#8e44ad', '#c0392b', '#1f6feb', '#0e7c86', '#b5651d'];
+function bookingColor(id) {
+  const n = Math.abs(Number(id)) || 0;
+  return GANTT_COLORS[n % GANTT_COLORS.length];
+}
+
 function renderBookingGanttGrid() {
   const year = bookingCalMonth.getFullYear();
   const month = bookingCalMonth.getMonth();
@@ -537,9 +547,10 @@ function renderBookingGanttGrid() {
       const width = ((seg.endCol - seg.startCol + 1) / 7) * 100;
       const top = barTopBase + seg.lane * laneHeight;
       const roundClass = `${seg.isActualStart ? 'round-start' : ''} ${seg.isActualEnd ? 'round-end' : ''}`;
-      const colorClass = b.source === 'ical' ? 'gantt-bar-auto' : 'gantt-bar-manual';
+      const manualClass = b.source === 'ical' ? '' : 'gantt-bar-manual';
+      const bg = bookingColor(b.id);
       const title = `${label} — ${niceDate(b.startDate)} to ${niceDate(b.endDate)}`.replace(/"/g, '&quot;');
-      return `<div class="gantt-bar ${colorClass} ${roundClass}" style="left:${left}%; width:${width}%; top:${top}px;" title="${title}" onclick="highlightBookingRow(${b.id})">
+      return `<div class="gantt-bar ${manualClass} ${roundClass}" style="left:${left}%; width:${width}%; top:${top}px; background:${bg};" title="${title}" onclick="highlightBookingRow(${b.id})">
         <span class="gantt-bar-label">${label.replace(/</g, '&lt;')}</span>
       </div>`;
     }).join('');

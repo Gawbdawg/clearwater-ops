@@ -568,13 +568,13 @@ function renderOwnerTable() {
   const filterEl = document.getElementById('ownerTypeFilter');
   const filter = filterEl ? filterEl.value : '';
   const owners = filter
-    ? state.owners.filter((o) => (o.accountType || 'owner') === filter)
+    ? state.owners.filter((o) => (o.propertyTypes || []).includes(filter))
     : state.owners;
   const tbody = document.querySelector('#ownerTable tbody');
   tbody.innerHTML = owners.map((o) => `
     <tr>
       <td>${o.name}</td>
-      <td>${o.accountType === 'manager' ? '<span class="badge draft">Property manager</span>' : '<span class="badge scheduled">Owner</span>'}</td>
+      <td>${ownerTypeBadges(o.propertyTypes)}</td>
       <td>${o.phone || ''}</td>
       <td>${o.email || ''}</td>
       <td>${o.username || '—'}</td>
@@ -593,6 +593,18 @@ function renderOwnerTable() {
 
 document.getElementById('ownerTypeFilter').addEventListener('change', renderOwnerTable);
 
+// Same badge language as the Homes tab's Vacation rental / Residential type — an
+// owner can show both if their linked homes are a mix, or neither yet if they have
+// no homes linked at all.
+function ownerTypeBadges(propertyTypes) {
+  const types = propertyTypes || [];
+  if (types.length === 0) return '<span style="color:var(--text-faint); font-size:12px;">No homes yet</span>';
+  return types.map((t) => t === 'vacation'
+    ? '<span class="badge scheduled">Vacation rental</span>'
+    : '<span class="badge draft">Residential</span>'
+  ).join(' ');
+}
+
 function ownerForm(o = {}) {
   const pricing = o.customPricing || {};
   const pricingRows = state.services.length
@@ -605,12 +617,6 @@ function ownerForm(o = {}) {
     : '<div class="portal-hint" style="margin:0;">Add services in Settings → Service catalog first, then come back here to set this owner\'s custom prices.</div>';
   return `
     <label>Name (required)<input id="f_oname" value="${o.name || ''}" /></label>
-    <label>Account type
-      <select id="f_oaccountType">
-        <option value="owner" ${(o.accountType || 'owner') === 'owner' ? 'selected' : ''}>Vacation rental owner</option>
-        <option value="manager" ${o.accountType === 'manager' ? 'selected' : ''}>Property manager</option>
-      </select>
-    </label>
     <label>Phone<input id="f_ophone" value="${o.phone || ''}" /></label>
     <label>Email<input id="f_oemail" value="${o.email || ''}" /></label>
     <label>Username<input id="f_ousername" value="${o.username || ''}" autocomplete="off" /></label>
@@ -647,7 +653,6 @@ function readOwnerForm() {
   });
   return {
     name: document.getElementById('f_oname').value,
-    accountType: document.getElementById('f_oaccountType').value,
     phone: document.getElementById('f_ophone').value,
     email: document.getElementById('f_oemail').value,
     username: document.getElementById('f_ousername').value,
