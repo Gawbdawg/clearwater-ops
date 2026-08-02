@@ -30,8 +30,10 @@ async function checkSession() {
 }
 
 let addonsCatalog = [];
+let currentTech = null;
 
 async function showJobs(tech) {
+  currentTech = tech;
   loginView.classList.add('hidden');
   jobsView.classList.remove('hidden');
   logoutBtn.style.display = '';
@@ -43,6 +45,26 @@ async function showJobs(tech) {
   }
   await loadJobs();
 }
+
+// ---- Tabs ----
+let activeTechTab = 'jobs';
+
+function switchTechTab(tab) {
+  activeTechTab = tab;
+  document.querySelectorAll('#techTabs .owner-tab-btn').forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.tab === tab);
+  });
+  document.querySelectorAll('#jobsView .owner-tab-panel').forEach((panel) => {
+    panel.classList.toggle('hidden', panel.id !== `tab-${tab}`);
+  });
+  if (tab === 'calendar') loadTechCalendar();
+  if (tab === 'timeoff') loadTimeOff();
+}
+
+document.getElementById('techTabs').addEventListener('click', (e) => {
+  const btn = e.target.closest('.owner-tab-btn');
+  if (btn) switchTechTab(btn.dataset.tab);
+});
 
 let selectedDate = null; // null = default "upcoming" view; a date string views just that day (past or future)
 
@@ -168,6 +190,21 @@ function niceDate(dateStr) {
   return new Date(dateStr + 'T00:00:00').toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
 }
 
+function todayStr() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${dd}`;
+}
+
+function fmtDate(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${dd}`;
+}
+
 window.markComplete = async (id) => {
   try {
     await api(`/api/tech/appointments/${id}/status`, { method: 'PUT', body: JSON.stringify({ status: 'completed' }) });
@@ -197,6 +234,29 @@ document.getElementById('jobsBackToUpcomingBtn').addEventListener('click', () =>
   selectedDate = null;
   document.getElementById('jobsDatePicker').value = '';
   loadJobs();
+});
+
+// ---- Text me my route ----
+// Sends the same route-ordered stop list the admin can copy/paste from the Daily
+// Schedule tab, but straight to the tech's own phone — defaults to today, or whatever
+// day is currently being viewed (via the date picker above).
+document.getElementById('textMyRouteBtn').addEventListener('click', async () => {
+  const statusEl = document.getElementById('textMyRouteStatus');
+  const btn = document.getElementById('textMyRouteBtn');
+  const date = selectedDate || todayStr();
+  btn.disabled = true;
+  statusEl.textContent = 'Sending…';
+  try {
+    const result = await api('/api/tech/text-my-route', { method: 'POST', body: JSON.stringify({ date }) });
+    statusEl.textContent = result.dryRun
+      ? `Route for ${niceDate(date)} logged (texting isn't set up yet — ask the admin).`
+      : `Texted! Check your phone for ${niceDate(date)}'s route.`;
+  } catch (e) {
+    statusEl.textContent = '';
+    alert('Could not text the route: ' + e.message);
+  } finally {
+    btn.disabled = false;
+  }
 });
 
 // ---- Photo upload ----
@@ -282,6 +342,160 @@ document.getElementById('loginPassword').addEventListener('keydown', (e) => {
 logoutBtn.addEventListener('click', async () => {
   await api('/api/tech-auth/logout', { method: 'POST' });
   checkSession();
+});
+
+// ---- Calendar (month grid of this tech's own jobs, plus their own blocked days) ----
+let techCalMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+let techCalAppts = [];
+let techCalTimeOff = [];
+
+async function loadTechCalendar() {
+  const [appts, timeOff] = await Promise.all([
+    api('/api/tech/appointments?all=1'),
+    api('/api/tech/time-off'),
+  ]);
+  techCalAppts = appts;
+  techCalTimeOff = timeOff;
+  renderTechCalendarGrid();
+}
+
+function renderTechCalendarGrid() {
+  const year = techCalMonth.getFullYear();
+  const month = techCalMonth.getMonth();
+  document.getElementById('techCalMonthLabel').textContent =
+    techCalMonth.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+
+  const firstDayOfWeek = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const gridStart = new Date(year, month, 1 - firstDayOfWeek);
+
+  const apptsByDate = {};
+  techCalAppts.forEach((a) => { (apptsByDate[a.date] = apptsByDate[a.date] || []).push(a); });
+  const timeOffByDate = {};
+  techCalTimeOff.forEach((t) => { timeOffByDate[t.date] = t; });
+
+  const dayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const today = todayStr();
+  let html = dayLabels.map((d) => `<div class="cal-daylabel">${d}</div>`).join('');
+
+  for (let i = 0; i < 42; i++) {
+    const cellDate = new Date(gridStart);
+    cellDate.setDate(gridStart.getDate() + i);
+    const dateStr = fmtDate(cellDate);
+    const inMonth = cellDate.getMonth() === month;
+    const dayAppts = apptsByDate[dateStr] || [];
+    const blocked = timeOffByDate[dateStr];
+    const apptChips = dayAppts.slice(0, 3).map((a) =>
+      `<div class="cal-appt-chip ${a.status}">${a.startTime} ${a.customerName}</div>`
+    ).join('');
+    const blockedChip = blocked ? '<div class="cal-appt-chip" style="background:repeating-linear-gradient(45deg,#eceff1,#eceff1 6px,#dde3e6 6px,#dde3e6 12px); color:#5a6b73; border-left-color:#8a99a1;">Blocked off</div>' : '';
+    html += `
+      <div class="cal-cell ${inMonth ? '' : 'other-month'} ${dateStr === today ? 'is-today' : ''}" onclick="onTechCalDayClick('${dateStr}')">
+        <div class="cal-daynum">${cellDate.getDate()}</div>
+        ${apptChips}${blockedChip}
+      </div>
+    `;
+    if (i >= firstDayOfWeek + daysInMonth - 1 && (i + 1) % 7 === 0) break;
+  }
+  document.getElementById('techCalGrid').innerHTML = html;
+}
+
+window.onTechCalDayClick = (dateStr) => {
+  const dayAppts = techCalAppts.filter((a) => a.date === dateStr);
+  const blocked = techCalTimeOff.find((t) => t.date === dateStr);
+  const panel = document.getElementById('techCalDayPanel');
+  panel.classList.remove('hidden');
+
+  let html = `<h3 style="margin:0 0 8px;">${niceDate(dateStr)}</h3>`;
+  if (dayAppts.length === 0) {
+    html += '<div class="empty-state">No jobs this day.</div>';
+  } else {
+    html += '<div class="day-detail-list">' + dayAppts.map((a) => `
+      <div class="owner-list-item">
+        <div>
+          <strong>${a.startTime}${a.endTime ? '–' + a.endTime : ''}</strong> · ${a.customerName}
+          <div class="job-meta">${a.serviceType || ''}</div>
+        </div>
+        <span class="badge ${a.status}">${a.status}</span>
+      </div>
+    `).join('') + '</div>';
+  }
+  if (blocked) {
+    html += `<div class="portal-sub" style="margin-top:10px;">Blocked off${blocked.note ? ' — ' + blocked.note : ''}. <a href="#" onclick="deleteTimeOff(${blocked.id}); return false;">Remove block</a></div>`;
+  }
+  panel.innerHTML = html;
+};
+
+document.getElementById('techCalPrevBtn').addEventListener('click', () => {
+  techCalMonth = new Date(techCalMonth.getFullYear(), techCalMonth.getMonth() - 1, 1);
+  renderTechCalendarGrid();
+});
+document.getElementById('techCalNextBtn').addEventListener('click', () => {
+  techCalMonth = new Date(techCalMonth.getFullYear(), techCalMonth.getMonth() + 1, 1);
+  renderTechCalendarGrid();
+});
+document.getElementById('techCalTodayBtn').addEventListener('click', () => {
+  const d = new Date();
+  techCalMonth = new Date(d.getFullYear(), d.getMonth(), 1);
+  renderTechCalendarGrid();
+});
+
+// ---- Time off (self-service day blocking — takes effect immediately) ----
+async function loadTimeOff() {
+  const entries = await api('/api/tech/time-off');
+  techCalTimeOff = entries;
+  const today = todayStr();
+  const upcoming = entries.filter((t) => t.date >= today);
+  const past = entries.filter((t) => t.date < today);
+  const el = document.getElementById('timeOffList');
+  if (entries.length === 0) {
+    el.innerHTML = '<div class="empty-state">No days blocked off.</div>';
+    return;
+  }
+  const renderRow = (t) => `
+    <div class="owner-list-item">
+      <div>
+        <strong>${niceDate(t.date)}</strong>
+        ${t.note ? `<div class="job-meta">${t.note}</div>` : ''}
+      </div>
+      <button class="btn small danger" onclick="deleteTimeOff(${t.id})">Remove</button>
+    </div>
+  `;
+  el.innerHTML = (upcoming.length ? upcoming.map(renderRow).join('') : '<div class="empty-state">No upcoming days blocked off.</div>')
+    + (past.length ? `<div class="portal-sub" style="margin:14px 0 6px;">Past</div>${past.map(renderRow).join('')}` : '');
+}
+
+window.deleteTimeOff = async (id) => {
+  await api(`/api/tech/time-off/${id}`, { method: 'DELETE' });
+  await loadTimeOff();
+  if (activeTechTab === 'calendar') loadTechCalendar();
+};
+
+document.getElementById('addTimeOffBtn').addEventListener('click', async () => {
+  const errEl = document.getElementById('timeOffError');
+  errEl.classList.add('hidden');
+  const startDate = document.getElementById('timeOffStart').value;
+  const endDate = document.getElementById('timeOffEnd').value;
+  const note = document.getElementById('timeOffNote').value;
+  if (!startDate) {
+    errEl.textContent = 'Pick at least a first day off.';
+    errEl.classList.remove('hidden');
+    return;
+  }
+  const btn = document.getElementById('addTimeOffBtn');
+  btn.disabled = true;
+  try {
+    await api('/api/tech/time-off', { method: 'POST', body: JSON.stringify({ startDate, endDate, note }) });
+    document.getElementById('timeOffStart').value = '';
+    document.getElementById('timeOffEnd').value = '';
+    document.getElementById('timeOffNote').value = '';
+    await loadTimeOff();
+  } catch (e) {
+    errEl.textContent = e.message || 'Could not block those days';
+    errEl.classList.remove('hidden');
+  } finally {
+    btn.disabled = false;
+  }
 });
 
 checkSession();

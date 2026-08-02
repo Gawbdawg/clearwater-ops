@@ -3,8 +3,20 @@ const store = require('../lib/store');
 const { hashPassword, sanitizeTechnician } = require('../lib/auth');
 const router = express.Router();
 
+// Attaches this technician's own upcoming self-blocked days (see routes/techPortal.js
+// #/time-off) so the admin can see requested time off right on the Technicians tab
+// without a separate page — today-forward only, since past blocked days aren't
+// actionable for anyone.
+function withUpcomingTimeOff(tech) {
+  const today = new Date().toISOString().slice(0, 10);
+  const timeOff = store.getAll('techTimeOff')
+    .filter((t) => t.technicianId === tech.id && t.date >= today)
+    .sort((a, b) => a.date.localeCompare(b.date));
+  return { ...sanitizeTechnician(tech), timeOff };
+}
+
 router.get('/', (req, res) => {
-  res.json(store.getAll('technicians').map(sanitizeTechnician));
+  res.json(store.getAll('technicians').map(withUpcomingTimeOff));
 });
 
 router.post('/', (req, res) => {
@@ -55,6 +67,18 @@ router.put('/:id', (req, res) => {
 router.delete('/:id', (req, res) => {
   const ok = store.remove('technicians', req.params.id);
   if (!ok) return res.status(404).json({ error: 'Technician not found' });
+  res.status(204).end();
+});
+
+// Lets the admin clear a technician's self-blocked day (e.g. a scheduling conflict
+// came up and it needs to be worked out and removed) — the tech can also remove their
+// own from the tech portal; this is just the admin-side override.
+router.delete('/:id/time-off/:timeOffId', (req, res) => {
+  const entry = store.getById('techTimeOff', req.params.timeOffId);
+  if (!entry || entry.technicianId !== Number(req.params.id)) {
+    return res.status(404).json({ error: 'Time off entry not found' });
+  }
+  store.remove('techTimeOff', req.params.timeOffId);
   res.status(204).end();
 });
 

@@ -29,13 +29,53 @@
       <!-- Jobs -->
       <section id="jobsView" class="hidden">
         <h1 id="welcomeMsg"></h1>
-        <p class="portal-sub">Your upcoming jobs. Mark one complete once you're done — you can undo that if you tap it by mistake.</p>
-        <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:12px;">
-          <input type="date" id="jobsDatePicker" />
-          <button class="btn small" id="jobsDateGoBtn">View that day</button>
-          <button class="btn small" id="jobsBackToUpcomingBtn" style="display:none;">Back to upcoming jobs</button>
+
+        <nav class="owner-tabs" id="techTabs">
+          <button class="owner-tab-btn active" data-tab="jobs">Jobs</button>
+          <button class="owner-tab-btn" data-tab="calendar">Calendar</button>
+          <button class="owner-tab-btn" data-tab="timeoff">Time off</button>
+        </nav>
+
+        <!-- Jobs -->
+        <div id="tab-jobs" class="owner-tab-panel">
+          <p class="portal-sub">Your upcoming jobs. Mark one complete once you're done — you can undo that if you tap it by mistake.</p>
+          <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:8px;">
+            <input type="date" id="jobsDatePicker" />
+            <button class="btn small" id="jobsDateGoBtn">View that day</button>
+            <button class="btn small" id="jobsBackToUpcomingBtn" style="display:none;">Back to upcoming jobs</button>
+          </div>
+          <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:12px;">
+            <button class="btn primary small" id="textMyRouteBtn">Text me today's route</button>
+            <span id="textMyRouteStatus" class="portal-sub" style="margin:0;"></span>
+          </div>
+          <div id="jobsList" class="card-list"></div>
         </div>
-        <div id="jobsList" class="card-list"></div>
+
+        <!-- Calendar -->
+        <div id="tab-calendar" class="owner-tab-panel hidden">
+          <p class="portal-sub">Blue days are scheduled, green are completed. Grey/hatched days are time you've blocked off.</p>
+          <div class="cal-nav">
+            <button class="btn" id="techCalPrevBtn">‹</button>
+            <h2 id="techCalMonthLabel"></h2>
+            <button class="btn" id="techCalNextBtn">›</button>
+            <button class="btn" id="techCalTodayBtn">Today</button>
+          </div>
+          <div class="cal-grid" id="techCalGrid"></div>
+          <div id="techCalDayPanel" class="portal-card hidden" style="max-width:none; margin-top:16px;"></div>
+        </div>
+
+        <!-- Time off -->
+        <div id="tab-timeoff" class="owner-tab-panel hidden">
+          <p class="portal-sub">Block off days you're not available — it takes effect right away, no approval needed. The admin can see this and will reach out if there's ever a conflict.</p>
+          <div class="calendar-form-row">
+            <label>First day off<input type="date" id="timeOffStart" /></label>
+            <label>Last day off<input type="date" id="timeOffEnd" /></label>
+            <label style="flex:1; min-width:160px;">Note<input type="text" id="timeOffNote" placeholder="optional" /></label>
+            <button class="btn primary" id="addTimeOffBtn">Block these days</button>
+          </div>
+          <div id="timeOffError" class="portal-error hidden"></div>
+          <div id="timeOffList"></div>
+        </div>
       </section>
     </main>
   </div>

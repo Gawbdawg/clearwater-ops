@@ -752,14 +752,35 @@ async function loadTechnicians() {
       <td>${t.email || ''}</td>
       <td>${t.username || '—'}</td>
       <td>${t.hasPassword ? '<span class="badge completed">Yes</span>' : '<span class="badge scheduled">Not set</span>'}</td>
+      <td>${renderTechTimeOff(t)}</td>
       <td>
         <button class="btn small" onclick="viewTechPortal(${t.id})">View portal</button>
         <button class="btn small" onclick="editTech(${t.id})">Edit</button>
         <button class="btn small danger" onclick="deleteTech(${t.id})">Delete</button>
       </td>
     </tr>
-  `).join('') || '<tr><td colspan="6" class="empty-state">No technicians yet.</td></tr>';
+  `).join('') || '<tr><td colspan="7" class="empty-state">No technicians yet.</td></tr>';
 }
+
+// Self-blocked days the tech set from their own portal (see routes/techPortal.js
+// #/time-off) — today-forward only. Nothing here prevents scheduling that tech that
+// day; it's purely visibility so a conflict can be worked out, with a quick way to
+// clear an entry if it's no longer needed.
+function renderTechTimeOff(t) {
+  const timeOff = t.timeOff || [];
+  if (timeOff.length === 0) return '<span style="color:var(--text-faint); font-size:12px;">None</span>';
+  return timeOff.map((entry) => `
+    <span class="badge draft" style="margin:0 4px 4px 0; display:inline-flex; align-items:center; gap:5px;">
+      ${niceDateShort(entry.date)}
+      <a href="#" onclick="removeTechTimeOff(${t.id}, ${entry.id}); return false;" style="color:inherit; text-decoration:none; font-weight:700;" title="Remove">×</a>
+    </span>
+  `).join('');
+}
+
+window.removeTechTimeOff = async (techId, timeOffId) => {
+  await api(`/api/technicians/${techId}/time-off/${timeOffId}`, { method: 'DELETE' });
+  loadTechnicians();
+};
 
 window.viewTechPortal = async (id) => {
   await api('/api/tech-auth/admin-view/' + id, { method: 'POST' });
