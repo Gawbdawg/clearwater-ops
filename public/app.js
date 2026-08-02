@@ -469,15 +469,24 @@ function frequencyLabel(c) {
 window.openScheduleRecurringModal = async (customerId, customerName) => {
   if (state.technicians.length === 0) state.technicians = await api('/api/technicians');
   if (state.services.length === 0) state.services = await api('/api/services');
+  if (state.appointments.length === 0) state.appointments = await api('/api/appointments');
+  // Defaults to this customer's most recently-used service (or the catalog's only
+  // service, if there's just one) so this whole recurring series is billable from the
+  // start — leaving it on "Custom / none" here is the single biggest source of
+  // completed-but-unbilled jobs, since one click here creates a long run of visits.
+  const priorAppt = state.appointments
+    .filter((a) => a.customerId === customerId && a.serviceId)
+    .sort((a, b) => (b.date || '').localeCompare(a.date || ''))[0];
+  const defaultServiceId = priorAppt ? priorAppt.serviceId : (state.services.length === 1 ? state.services[0].id : '');
   const html = `
     <p class="portal-sub" style="margin:0 0 8px;">Generates the actual recurring visits on the calendar from this customer's saved service frequency (${frequencyLabel(state.customers.find((x) => x.id === customerId) || {})}), starting from a date you pick below.</p>
     <label>First visit date<input type="date" id="f_srDate" value="${todayStr()}" /></label>
     <label>Start time<input type="time" id="f_srTime" value="09:00" /></label>
     <label>Technician<select id="f_srTech">${techOptions(null)}</select></label>
-    <label>Service (optional — picks a price for auto-invoicing)
+    <label>Service <span style="font-weight:400; color:#7a8f97;">(picks a price for auto-invoicing — leaving this on "Custom / none" means these visits won't invoice automatically when completed)</span>
       <select id="f_srService">
         <option value="">Custom / none</option>
-        ${state.services.map((s) => `<option value="${s.id}">${s.name}</option>`).join('')}
+        ${state.services.map((s) => `<option value="${s.id}" ${String(s.id) === String(defaultServiceId) ? 'selected' : ''}>${s.name}</option>`).join('')}
       </select>
     </label>
     <div id="scheduleRecurringError" class="portal-error hidden"></div>
@@ -972,8 +981,8 @@ function apptForm(a = {}) {
     <label>Date<input type="date" id="f_date" value="${a.date || todayStr()}" /></label>
     <input type="hidden" id="f_startTime" value="${a.startTime || '09:00'}" />
     <input type="hidden" id="f_endTime" value="${a.endTime || ''}" />
-    <label>Service (optional — picks a price for auto-invoicing)
-      <select id="f_serviceId" onchange="onApptServiceChange()">
+    <label>Service <span style="font-weight:400; color:#7a8f97;">(picks a price for auto-invoicing — leaving this on "Custom / none" means the job won't invoice automatically when completed)</span>
+      <select id="f_serviceId" onchange="this.dataset.userTouched='1'; onApptServiceChange()">
         <option value="">Custom / none</option>
         ${state.services.map((s) => `<option value="${s.id}" ${s.id === a.serviceId ? 'selected' : ''}>${s.name} — ${money(s.defaultPrice)}</option>`).join('')}
       </select>
@@ -1052,7 +1061,12 @@ window.onApptRecurrenceChange = () => {
 
 // Defaults the "Repeats" dropdown to whatever service frequency is saved on the
 // selected customer, so scheduling their first visit doesn't require re-picking a
-// frequency that's already on file. Only runs for new appointments (isNew).
+// frequency that's already on file. Only runs for new appointments (isNew). Also
+// defaults the Service dropdown so a newly-scheduled job is billable from the start —
+// leaving it on "Custom / none" is exactly how completed jobs end up with no invoice
+// (see the Reports tab's "Completed jobs missing an invoice" table). Prefers this same
+// customer's most recently-used service; if there's no history yet and the catalog
+// only has one service, defaults to that (most small operations only have one).
 window.onApptCustomerChange = () => {
   const recurrenceEl = document.getElementById('f_recurrence');
   if (!recurrenceEl) return;
@@ -1067,6 +1081,16 @@ window.onApptCustomerChange = () => {
     recurrenceEl.value = 'none';
   }
   onApptRecurrenceChange();
+
+  const serviceEl = document.getElementById('f_serviceId');
+  if (serviceEl && !serviceEl.dataset.userTouched) {
+    const priorAppt = (state.appointments || [])
+      .filter((a) => a.customerId === customerId && a.serviceId)
+      .sort((a, b) => (b.date || '').localeCompare(a.date || ''))[0];
+    const defaultServiceId = priorAppt ? priorAppt.serviceId : (state.services.length === 1 ? state.services[0].id : '');
+    serviceEl.value = defaultServiceId || '';
+    onApptServiceChange();
+  }
 };
 
 function readApptForm() {
@@ -1690,22 +1714,63 @@ async function loadReports() {
   // Completed jobs should always end up with an invoice (see lib/autoInvoice.js) — if
   // one's missing here, auto-pricing couldn't find a service to bill against (no
   // service selected on the appointment, and no prior job for this customer to infer
-  // one from). Surfacing these so nothing quietly goes unbilled.
-  const missingInvoice = completed
+  // one from). Surfacing these so nothing quietly goes unbilled, with a bulk tool below
+  // to fix a whole backlog of them in one action.
+  state.missingInvoiceAppts = completed
     .filter((a) => !invoices.some((i) => i.appointmentId === a.id))
     .sort((a, b) => (b.date + (b.startTime || '')).localeCompare(a.date + (a.startTime || '')));
   const missingInvoiceBody = document.getElementById('missingInvoiceBody');
-  missingInvoiceBody.innerHTML = missingInvoice.length
-    ? missingInvoice.map((a) => `
+  missingInvoiceBody.innerHTML = state.missingInvoiceAppts.length
+    ? state.missingInvoiceAppts.map((a) => `
         <tr>
+          <td><input type="checkbox" class="missing-invoice-check" value="${a.id}" onchange="updateMissingInvoiceToolbar()" /></td>
           <td>${a.date}${a.startTime ? ' · ' + a.startTime : ''}</td>
           <td>${a.customerName || 'Unknown'}</td>
           <td>${a.technicianName || 'Unassigned'}</td>
           <td>${a.serviceType || ''}</td>
         </tr>
       `).join('')
-    : '<tr><td colspan="4" class="empty-state">None — every completed job has an invoice.</td></tr>';
+    : '<tr><td colspan="5" class="empty-state">None — every completed job has an invoice.</td></tr>';
+
+  const serviceSelect = document.getElementById('missingInvoiceServiceSelect');
+  serviceSelect.innerHTML = state.services.length
+    ? state.services.map((s) => `<option value="${s.id}">${s.name} — ${money(s.defaultPrice)}</option>`).join('')
+    : '<option value="">No services in your catalog yet — add one in Settings first</option>';
+  document.getElementById('missingInvoiceSelectAll').checked = false;
+  updateMissingInvoiceToolbar();
 }
+
+window.toggleAllMissingInvoice = (checkbox) => {
+  document.querySelectorAll('.missing-invoice-check').forEach((c) => { c.checked = checkbox.checked; });
+  updateMissingInvoiceToolbar();
+};
+
+window.updateMissingInvoiceToolbar = () => {
+  const checked = document.querySelectorAll('.missing-invoice-check:checked');
+  const toolbar = document.getElementById('missingInvoiceToolbar');
+  toolbar.classList.toggle('hidden', checked.length === 0);
+  document.getElementById('missingInvoiceSelectedCount').textContent =
+    `${checked.length} job${checked.length === 1 ? '' : 's'} selected`;
+};
+
+window.assignServiceToMissingInvoices = async () => {
+  const checked = [...document.querySelectorAll('.missing-invoice-check:checked')].map((c) => Number(c.value));
+  const serviceId = document.getElementById('missingInvoiceServiceSelect').value;
+  if (!checked.length) return;
+  if (!serviceId) { alert('Add a service in Settings first, or select one to bill these against.'); return; }
+  const service = state.services.find((s) => String(s.id) === String(serviceId));
+  if (!confirm(`Bill ${checked.length} completed job(s) as "${service ? service.name : 'this service'}" and create their invoices?`)) return;
+  try {
+    const result = await api('/api/appointments/bulk-assign-service', {
+      method: 'POST',
+      body: JSON.stringify({ appointmentIds: checked, serviceId }),
+    });
+    await loadReports();
+    alert(`Done — ${result.invoicesCreated} new invoice(s) created for ${result.updatedCount} job(s). Check the Invoices tab.`);
+  } catch (e) {
+    alert('Could not assign a service: ' + e.message);
+  }
+};
 
 // ---------- Settings (route optimization depot + geocoding) ----------
 // ---------- Newsletter ----------

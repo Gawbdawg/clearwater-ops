@@ -93,6 +93,33 @@ router.put('/:id', (req, res) => {
   res.json(enrich(updated));
 });
 
+// Fixes a batch of already-completed jobs that never got invoiced because they were
+// never linked to a catalog service (see the Reports tab's "Completed jobs missing an
+// invoice" table) — picks one service for all of them at once and re-runs invoicing,
+// rather than making the admin open and edit each appointment individually.
+router.post('/bulk-assign-service', (req, res) => {
+  const { appointmentIds, serviceId } = req.body;
+  if (!Array.isArray(appointmentIds) || !appointmentIds.length) {
+    return res.status(400).json({ error: 'appointmentIds must be a non-empty array' });
+  }
+  const service = serviceId ? store.getById('services', serviceId) : null;
+  if (!service) return res.status(400).json({ error: 'A valid serviceId is required' });
+
+  let updatedCount = 0;
+  let invoicesCreated = 0;
+  appointmentIds.forEach((id) => {
+    const appt = store.getById('appointments', id);
+    if (!appt) return;
+    const hadInvoice = store.getAll('invoices').some((i) => i.appointmentId === appt.id);
+    const updated = store.update('appointments', id, { serviceId: service.id });
+    updatedCount += 1;
+    const invoice = syncInvoiceForCompletedAppointment(updated);
+    if (invoice && !hadInvoice) invoicesCreated += 1;
+  });
+
+  res.json({ updatedCount, invoicesCreated });
+});
+
 router.delete('/:id', (req, res) => {
   const appt = store.getById('appointments', req.params.id);
   if (!appt) return res.status(404).json({ error: 'Appointment not found' });
