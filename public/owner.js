@@ -318,9 +318,34 @@ async function loadVisits() {
       </div>
       ${v.status === 'scheduled' ? renderVisitAddons(v) : (v.addons && v.addons.length ? `<div class="job-meta">Extras: ${v.addons.map((a) => `${a.name} ($${Number(a.price).toFixed(2)})`).join(', ')}</div>` : '')}
       ${renderVisitPhotos(v)}
+      ${v.status === 'scheduled' ? `<button class="btn small danger" style="margin-top:8px;" onclick="cancelVisit(${v.id}, '${v.date}', '${v.startTime || ''}')">Cancel visit</button>` : ''}
     </div>
   `).join('');
 }
+
+// Cancellation policy: 24+ hours' notice is free; less than 24 hours bills half the
+// service price. The actual charge/no-charge decision is made server-side (this is
+// just for the confirm-dialog wording) — see routes/ownerPortal.js#/appointments/:id/cancel.
+window.cancelVisit = async (apptId, dateStr, startTime) => {
+  const visitDateTime = new Date(`${dateStr}T${startTime || '09:00'}:00`);
+  const hoursUntil = (visitDateTime.getTime() - Date.now()) / (1000 * 60 * 60);
+  const warning = hoursUntil < 24
+    ? "This visit is less than 24 hours away. Our cancellation policy charges half the service price as a fee for cancellations this close to the visit. Cancel anyway?"
+    : 'Cancel this visit?';
+  if (!confirm(warning)) return;
+  try {
+    const result = await api(`/api/owner/appointments/${apptId}/cancel`, { method: 'POST' });
+    if (result.feeCharged) {
+      alert(`Visit cancelled. A $${Number(result.feeAmount).toFixed(2)} cancellation fee applies since this was within 24 hours.`);
+    } else {
+      alert('Visit cancelled — no fee.');
+    }
+    loadVisits();
+    loadOverview();
+  } catch (e) {
+    alert(e.message || 'Could not cancel this visit.');
+  }
+};
 
 function renderVisitPhotos(v) {
   const photos = v.photos || [];

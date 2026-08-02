@@ -4,7 +4,7 @@ const { requireOwnerAuth } = require('../lib/auth');
 const { syncCustomerCalendar } = require('../lib/icalSync');
 const { maybeCreateCheckoutAppointment } = require('../lib/turnoverSchedule');
 const { geocodeAddress } = require('../lib/geocode');
-const { previewFrequencyPricing } = require('../lib/autoInvoice');
+const { previewFrequencyPricing, maybeCreateCancellationFeeInvoice } = require('../lib/autoInvoice');
 const { generateRecurringSeries } = require('../lib/scheduleFromFrequency');
 const router = express.Router();
 
@@ -204,6 +204,29 @@ router.delete('/appointments/:id/addons/:addonId', (req, res) => {
   const addons = (appt.addons || []).filter((a) => String(a.id) !== req.params.addonId);
   const updated = store.update('appointments', req.params.id, { addons });
   res.json({ addons: updated.addons });
+});
+
+// Cancellation policy: cancelling with 24+ hours' notice is free; cancelling less than
+// 24 hours before the scheduled visit bills half of what that visit would have cost
+// (see lib/autoInvoice.js#maybeCreateCancellationFeeInvoice). Only an upcoming
+// ('scheduled') visit on one of the owner's own properties can be cancelled this way —
+// already-completed or already-cancelled visits are untouched.
+router.post('/appointments/:id/cancel', (req, res) => {
+  const appt = myUpcomingAppointment(req, req.params.id);
+  if (!appt) return res.status(404).json({ error: 'Upcoming visit not found' });
+
+  const visitDateTime = new Date(`${appt.date}T${appt.startTime || '09:00'}:00`);
+  const hoursUntilVisit = (visitDateTime.getTime() - Date.now()) / (1000 * 60 * 60);
+  const withinCancellationWindow = hoursUntilVisit < 24;
+
+  const updated = store.update('appointments', req.params.id, { status: 'cancelled' });
+  const feeInvoice = withinCancellationWindow ? maybeCreateCancellationFeeInvoice(updated) : null;
+
+  res.json({
+    cancelled: true,
+    feeCharged: !!feeInvoice,
+    feeAmount: feeInvoice ? feeInvoice.amount : 0,
+  });
 });
 
 // ---- Occupied / guest-booking date ranges (scoped to one of this owner's properties) ----
