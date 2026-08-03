@@ -83,7 +83,7 @@ async function loadJobs() {
     <div class="job-card">
       <div class="job-top">
         <div>
-          <div class="job-date">${niceDate(j.date)} · ${j.startTime}${j.endTime ? '–' + j.endTime : ''}</div>
+          <div class="job-date">${niceDate(j.date)}</div>
           <div class="job-customer">${j.customerName}</div>
           <div class="job-meta">${j.serviceType}${j.customerAddress ? ' · ' + j.customerAddress : ''}</div>
           ${j.customerPhone ? `<div class="job-meta">${j.customerPhone}</div>` : ''}
@@ -413,7 +413,7 @@ function renderTechCalendarGrid() {
     const dayAppts = apptsByDate[dateStr] || [];
     const blocked = timeOffByDate[dateStr];
     const apptChips = dayAppts.slice(0, 3).map((a) =>
-      `<div class="cal-appt-chip ${a.status}">${a.startTime} ${a.customerName}</div>`
+      `<div class="cal-appt-chip ${a.status}">${a.customerName}</div>`
     ).join('');
     const blockedChip = blocked ? '<div class="cal-appt-chip" style="background:repeating-linear-gradient(45deg,#eceff1,#eceff1 6px,#dde3e6 6px,#dde3e6 12px); color:#5a6b73; border-left-color:#8a99a1;">Blocked off</div>' : '';
     html += `
@@ -440,7 +440,7 @@ window.onTechCalDayClick = (dateStr) => {
     html += '<div class="day-detail-list">' + dayAppts.map((a) => `
       <div class="owner-list-item">
         <div>
-          <strong>${a.startTime}${a.endTime ? '–' + a.endTime : ''}</strong> · ${a.customerName}
+          <strong>${a.customerName}</strong>
           <div class="job-meta">${a.serviceType || ''}</div>
         </div>
         <span class="badge ${a.status}">${a.status}</span>

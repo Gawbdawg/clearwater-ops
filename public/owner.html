@@ -45,6 +45,24 @@
           <label>Password<input type="password" id="loginPassword" autocomplete="current-password" /></label>
           <button class="btn primary" id="loginBtn">Log in</button>
         </div>
+
+        <div style="border-top:1px solid #eef1f2; margin-top:16px; padding-top:12px;">
+          <button class="btn small" id="showSignupBtn">New here? Create an account</button>
+        </div>
+      </section>
+
+      <!-- Self sign-up: brand-new owners with no account yet. Lands with no property
+           linked — the dashboard's empty state walks them straight into adding one. -->
+      <section id="signupView" class="portal-card hidden">
+        <h1>Create your account</h1>
+        <div id="signupError" class="portal-error hidden"></div>
+        <label>Name<input type="text" id="signupName" autocomplete="name" /></label>
+        <label>Email<input type="email" id="signupEmail" autocomplete="email" /></label>
+        <label>Phone <span style="font-weight:400; color:#7a8f97;">(optional)</span><input type="tel" id="signupPhone" autocomplete="tel" /></label>
+        <label>Username <span style="font-weight:400; color:#7a8f97;">(optional — you can always log in with your email + a code instead)</span><input type="text" id="signupUsername" autocomplete="username" /></label>
+        <label>Password<input type="password" id="signupPassword" autocomplete="new-password" /></label>
+        <button class="btn primary" id="createAccountBtn">Create account</button>
+        <button class="btn small" id="backToLoginBtn" style="margin-top:6px;">Back to log in</button>
       </section>
 
       <!-- Terms of Service gate — shown once, the first time an owner logs in, before

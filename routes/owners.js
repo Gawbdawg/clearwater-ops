@@ -19,7 +19,11 @@ function withPropertyCount(owner) {
 }
 
 router.get('/', (req, res) => {
-  res.json(store.getAll('owners').map(withPropertyCount));
+  const owners = store.getAll('owners')
+    .slice()
+    .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+    .map(withPropertyCount);
+  res.json(owners);
 });
 
 // A durable, downloadable record of a signed Service Agreement — same wording the owner

@@ -240,7 +240,7 @@ router.post('/text-my-route', async (req, res) => {
     text += 'No appointments scheduled that day.';
   } else {
     ordered.forEach((a, i) => {
-      text += `${i + 1}. ${a.startTime}${a.endTime ? '-' + a.endTime : ''} — ${a.customer ? a.customer.name : 'Unknown'} (${a.serviceType || 'Service'})\n`;
+      text += `${i + 1}. ${a.customer ? a.customer.name : 'Unknown'} (${a.serviceType || 'Service'})\n`;
       if (a.customer && a.customer.address) text += `   ${a.customer.address}\n`;
       if (a.customer && a.customer.phone) text += `   ${a.customer.phone}\n`;
       if (a.notes) text += `   Note: ${a.notes}\n`;

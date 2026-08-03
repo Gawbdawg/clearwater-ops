@@ -2,6 +2,7 @@ const express = require('express');
 const store = require('../lib/store');
 const { sanitizeCustomer, sanitizeTechnician } = require('../lib/auth');
 const { orderStopsByRoute } = require('../lib/routeOptimizer');
+const { sendEmail } = require('../lib/mailer');
 const router = express.Router();
 
 function dayAppointments(date) {
@@ -63,13 +64,16 @@ router.get('/:date/technician/:technicianId/text', (req, res) => {
 
   const { ordered, routed, missingCount } = routeOrder(appts);
 
+  // No specific time is ever quoted here — jobs aren't scheduled to a time slot, just a
+  // day, so the numbered order (route order when we have one) is the only ordering
+  // information that means anything.
   let text = `Hi ${tech.name}, here's your Clear Water schedule for ${req.params.date}`;
   text += routed ? ' (in efficient route order from the shop):\n\n' : ':\n\n';
   if (ordered.length === 0) {
     text += 'No appointments scheduled today.';
   } else {
     ordered.forEach((a, i) => {
-      text += `${i + 1}. ${a.startTime}${a.endTime ? '-' + a.endTime : ''} — ${a.customer ? a.customer.name : 'Unknown'} (${a.serviceType})\n`;
+      text += `${i + 1}. ${a.customer ? a.customer.name : 'Unknown'} (${a.serviceType})\n`;
       if (a.customer && a.customer.address) text += `   ${a.customer.address}\n`;
       if (a.customer && a.customer.phone) text += `   ${a.customer.phone}\n`;
       if (a.notes) text += `   Note: ${a.notes}\n`;
@@ -78,11 +82,18 @@ router.get('/:date/technician/:technicianId/text', (req, res) => {
       text += `\n(${missingCount} stop${missingCount === 1 ? '' : 's'} listed last — no map location on file yet; use "Geocode all addresses" in the admin Customers tab.)`;
     }
     if (!routed) {
-      text += `\n(Listed by appointment time — set a shop address and geocode customer addresses in Settings to get route-ordered stops.)`;
+      text += `\n(Set a shop address and geocode customer addresses in Settings to get route-ordered stops.)`;
     }
   }
   res.json({ technician: sanitizeTechnician(tech), text });
 });
+
+// Builds the plain-text confirmation message for a customer — shared by the
+// copy-to-clipboard and email-it endpoints below so they always say exactly the same
+// thing. No time is quoted (jobs are scheduled to a day, not a time slot).
+function customerConfirmationText(appt, customer, technician) {
+  return `Hi ${customer ? customer.name : ''}, this is Clear Water Spa Service confirming your ${appt.serviceType} appointment on ${appt.date}${technician ? ' with ' + technician.name : ''}. Reply if you need to reschedule. Thank you!`;
+}
 
 // Plain-text confirmation message ready to send to a customer for a specific appointment
 router.get('/appointment/:appointmentId/customer-text', (req, res) => {
@@ -90,8 +101,28 @@ router.get('/appointment/:appointmentId/customer-text', (req, res) => {
   if (!appt) return res.status(404).json({ error: 'Appointment not found' });
   const customer = store.getById('customers', appt.customerId);
   const technician = appt.technicianId ? store.getById('technicians', appt.technicianId) : null;
-  const text = `Hi ${customer ? customer.name : ''}, this is Clear Water Spa Service confirming your ${appt.serviceType} appointment on ${appt.date} at ${appt.startTime}${technician ? ' with ' + technician.name : ''}. Reply if you need to reschedule. Thank you!`;
+  const text = customerConfirmationText(appt, customer, technician);
   res.json({ customer: sanitizeCustomer(customer), appointment: appt, text });
+});
+
+// Same message as above, but emailed straight to the customer instead of copied to the
+// clipboard — same dry-run fallback as every other email in the app if no email
+// provider is configured yet (see lib/mailer.js).
+router.post('/appointment/:appointmentId/email-customer-text', async (req, res) => {
+  const appt = store.getById('appointments', req.params.appointmentId);
+  if (!appt) return res.status(404).json({ error: 'Appointment not found' });
+  const customer = store.getById('customers', appt.customerId);
+  if (!customer || !customer.email) {
+    return res.status(400).json({ error: 'No email on file for this home yet.' });
+  }
+  const technician = appt.technicianId ? store.getById('technicians', appt.technicianId) : null;
+  const text = customerConfirmationText(appt, customer, technician);
+  try {
+    const result = await sendEmail({ to: customer.email, subject: 'Your Clear Water Spa Service appointment', text });
+    res.json({ sent: true, dryRun: !!result.dryRun });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
 });
 
 module.exports = router;

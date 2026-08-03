@@ -91,7 +91,7 @@ async function loadDashboard() {
   list.innerHTML = appts.map((a) => `
     <div class="appt-card">
       <div>
-        <strong>${a.startTime}${a.endTime ? '–' + a.endTime : ''} — ${a.customerName}</strong>
+        <strong>${a.customerName}</strong>
         <div class="meta">${a.serviceType} · Tech: ${a.technicianName} ${a.customerAddress ? '· ' + a.customerAddress : ''}</div>
       </div>
       <span class="badge ${a.status}">${a.status}</span>
@@ -430,7 +430,7 @@ window.viewCustomerProfile = async (id) => {
     return `
       <div class="profile-history-item">
         <div style="display:flex; justify-content:space-between; gap:8px;">
-          <strong>${niceDateShort(a.date)} · ${a.startTime}</strong>
+          <strong>${niceDateShort(a.date)}</strong>
           <span class="badge ${a.status}">${a.status}</span>
         </div>
         <div style="color:#5a7078;">${a.serviceType || ''}${a.technicianName ? ' · ' + a.technicianName : ''}</div>
@@ -512,7 +512,10 @@ window.openScheduleRecurringModal = async (customerId, customerName) => {
   const html = `
     <p class="portal-sub" style="margin:0 0 8px;">Generates the actual recurring visits on the calendar from this customer's saved service frequency (${frequencyLabel(state.customers.find((x) => x.id === customerId) || {})}), starting from a date you pick below.</p>
     <label>First visit date<input type="date" id="f_srDate" value="${todayStr()}" /></label>
-    <label>Start time<input type="time" id="f_srTime" value="09:00" /></label>
+    <!-- Jobs aren't scheduled to a time slot, just a day (see the main appointment form
+         for the same pattern) — this hidden field just keeps older sort-by-time
+         fallback code elsewhere working with a consistent placeholder. -->
+    <input type="hidden" id="f_srTime" value="09:00" />
     <label>Technician<select id="f_srTech">${techOptions(null)}</select></label>
     <label>Service <span style="font-weight:400; color:#7a8f97;">(picks a price for auto-invoicing — leaving this on "Custom / none" means these visits won't invoice automatically when completed)</span>
       <select id="f_srService">
@@ -901,7 +904,7 @@ function renderCalendarGrid() {
     const inMonth = cellDate.getMonth() === month;
     const appts = apptsByDate[dateStr] || [];
     const chips = appts.slice(0, 3).map((a) =>
-      `<div class="cal-appt-chip ${a.status}">${a.startTime} ${a.customerName}</div>`
+      `<div class="cal-appt-chip ${a.status}">${a.customerName}</div>`
     ).join('');
     const more = appts.length > 3 ? `<div class="cal-more">+${appts.length - 3} more</div>` : '';
     html += `
@@ -941,7 +944,7 @@ window.openDayDetail = (dateStr) => {
     ? appts.map((a) => `
         <div class="appt-card">
           <div>
-            <strong>${a.startTime}${a.endTime ? '–' + a.endTime : ''} — ${a.customerName}</strong>
+            <strong>${a.customerName}</strong>
             <div class="meta">${a.serviceType} · Tech: ${a.technicianName}</div>
             ${(a.chlorine || a.ph || a.alkalinity) ? `<div class="meta">Chemistry: ${[a.chlorine && 'Cl ' + a.chlorine, a.ph && 'pH ' + a.ph, a.alkalinity && 'Alk ' + a.alkalinity].filter(Boolean).join(' · ')}</div>` : ''}
             ${a.reminderSentAt ? `<div class="meta">Reminder texted ✓</div>` : ''}
@@ -1521,10 +1524,13 @@ window.deleteInvoice = async (id) => {
 };
 
 // ---------- Daily Schedule ----------
+// Jobs aren't scheduled to a specific time of day, just a day — so nothing on this tab
+// shows or asks for a time, only the date (and reassigning which tech / which day).
 async function loadSchedule() {
   const dateInput = document.getElementById('schedDate');
   if (!dateInput.value) dateInput.value = todayStr();
   const date = dateInput.value;
+  if (state.technicians.length === 0) state.technicians = await api('/api/technicians');
   const data = await api('/api/schedule/' + date);
   const container = document.getElementById('schedByTech');
   const techNames = Object.keys(data.byTechnician);
@@ -1532,6 +1538,9 @@ async function loadSchedule() {
     container.innerHTML = '<div class="empty-state">No appointments scheduled for this date.</div>';
     return;
   }
+  const techOptions = (selectedId) => '<option value="">Unassigned</option>' + state.technicians.map((t) =>
+    `<option value="${t.id}" ${selectedId === t.id ? 'selected' : ''}>${t.name}</option>`
+  ).join('');
   container.innerHTML = techNames.map((techName) => {
     const appts = data.byTechnician[techName];
     const techId = appts[0].technician ? appts[0].technician.id : null;
@@ -1539,12 +1548,28 @@ async function loadSchedule() {
       <div class="tech-group">
         <h3>${techName} ${techId ? `<button class="btn small" onclick="copyTechText('${date}', ${techId})">Copy schedule text</button>` : ''}</h3>
         ${appts.map((a) => `
-          <div class="appt-card">
-            <div>
-              <strong>${a.startTime}${a.endTime ? '–' + a.endTime : ''} — ${a.customer ? a.customer.name : 'Unknown'}</strong>
-              <div class="meta">${a.serviceType} ${a.customer && a.customer.address ? '· ' + a.customer.address : ''}</div>
+          <div class="appt-card" style="flex-direction:column; align-items:stretch; gap:8px;">
+            <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px; flex-wrap:wrap;">
+              <div>
+                <strong>${a.customer ? a.customer.name : 'Unknown'}</strong>
+                <div class="meta">${a.serviceType} ${a.customer && a.customer.address ? '· ' + a.customer.address : ''}</div>
+              </div>
+              <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                <button class="btn small" onclick="copyCustomerText(${a.id})">Copy home text</button>
+                <button class="btn small" onclick="emailCustomerText(${a.id})">Email home text</button>
+                <button class="btn small" onclick="toggleReassignForm(${a.id})">Reassign / move</button>
+              </div>
             </div>
-            <button class="btn small" onclick="copyCustomerText(${a.id})">Copy home text</button>
+            <div id="reassignForm-${a.id}" class="hidden" style="display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap; background:#f7fafb; border-radius:8px; padding:8px;">
+              <label style="flex-direction:column; font-size:12px; color:#46606b; display:flex; gap:2px;">Technician
+                <select id="reassignTech-${a.id}">${techOptions(a.technician ? a.technician.id : null)}</select>
+              </label>
+              <label style="flex-direction:column; font-size:12px; color:#46606b; display:flex; gap:2px;">Date
+                <input type="date" id="reassignDate-${a.id}" value="${a.date}" />
+              </label>
+              <button class="btn small primary" onclick="saveReassign(${a.id})">Save</button>
+              <button class="btn small" onclick="toggleReassignForm(${a.id})">Cancel</button>
+            </div>
           </div>
         `).join('')}
       </div>
@@ -1562,6 +1587,34 @@ window.copyTechText = async (date, technicianId) => {
 window.copyCustomerText = async (appointmentId) => {
   const data = await api(`/api/schedule/appointment/${appointmentId}/customer-text`);
   openTextModal(`Message to ${data.customer ? data.customer.name : 'the home'}`, data.text);
+};
+
+window.emailCustomerText = async (appointmentId) => {
+  try {
+    const result = await api(`/api/schedule/appointment/${appointmentId}/email-customer-text`, { method: 'POST' });
+    alert(result.dryRun ? 'Email logged (no email provider configured yet — see Settings/README).' : 'Emailed!');
+  } catch (e) {
+    alert('Could not email: ' + e.message);
+  }
+};
+
+window.toggleReassignForm = (appointmentId) => {
+  document.getElementById(`reassignForm-${appointmentId}`).classList.toggle('hidden');
+};
+
+window.saveReassign = async (appointmentId) => {
+  const techVal = document.getElementById(`reassignTech-${appointmentId}`).value;
+  const dateVal = document.getElementById(`reassignDate-${appointmentId}`).value;
+  if (!dateVal) { alert('Pick a date.'); return; }
+  try {
+    await api(`/api/appointments/${appointmentId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ technicianId: techVal ? Number(techVal) : null, date: dateVal }),
+    });
+    loadSchedule();
+  } catch (e) {
+    alert('Could not save: ' + e.message);
+  }
 };
 
 // ---------- Property Calendar (owner-submitted guest booking dates) ----------
@@ -1717,11 +1770,20 @@ function renderBars(containerId, entries, formatValue) {
 }
 
 async function loadReports() {
-  const [appointments, invoices, technicians] = await Promise.all([
+  const [appointments, invoices, technicians, owners, customers] = await Promise.all([
     api('/api/appointments'),
     api('/api/invoices'),
     api('/api/technicians'),
+    api('/api/owners'),
+    api('/api/customers'),
   ]);
+
+  // Kept on state so the owner-drilldown select below can re-render without another
+  // round-trip whenever the picked owner changes.
+  state.reportAppointments = appointments;
+  state.reportOwners = owners;
+  state.reportCustomers = customers;
+  populateReportOwnerSelect();
 
   const completed = appointments.filter((a) => a.status === 'completed');
   const paidInvoices = invoices.filter((i) => i.status === 'paid');
@@ -1783,7 +1845,7 @@ async function loadReports() {
         const feeInvoice = invoices.find((i) => i.appointmentId === a.id);
         return `
           <tr>
-            <td>${a.date}${a.startTime ? ' · ' + a.startTime : ''}</td>
+            <td>${a.date}</td>
             <td>${a.customerName || 'Unknown'}</td>
             <td>${a.serviceType || ''}</td>
             <td>${feeInvoice ? `${money(feeInvoice.amount)} <span class="badge ${feeInvoice.status}">${feeInvoice.status}</span>` : '<span class="portal-hint" style="margin:0;">No fee</span>'}</td>
@@ -1805,7 +1867,7 @@ async function loadReports() {
     ? state.missingInvoiceAppts.map((a) => `
         <tr>
           <td><input type="checkbox" class="missing-invoice-check" value="${a.id}" onchange="updateMissingInvoiceToolbar()" /></td>
-          <td>${a.date}${a.startTime ? ' · ' + a.startTime : ''}</td>
+          <td>${a.date}</td>
           <td>${a.customerName || 'Unknown'}</td>
           <td>${a.technicianName || 'Unassigned'}</td>
           <td>${a.serviceType || ''}</td>
@@ -1821,6 +1883,63 @@ async function loadReports() {
   document.getElementById('missingInvoiceSelectAll').checked = false;
   updateMissingInvoiceToolbar();
 }
+
+// Rebuilds the owner-drilldown dropdown after every reports refresh — owners already
+// come back alphabetical from GET /api/owners, so no re-sort is needed here. Keeps
+// whichever owner was already selected (if they still exist) selected across a
+// refresh, e.g. right after bulk-assigning invoices above.
+function populateReportOwnerSelect() {
+  const select = document.getElementById('reportOwnerSelect');
+  const prior = select.value;
+  select.innerHTML = '<option value="">Choose an owner…</option>' +
+    state.reportOwners.map((o) => `<option value="${o.id}">${o.name}</option>`).join('');
+  const stillExists = prior && state.reportOwners.some((o) => String(o.id) === prior);
+  select.value = stillExists ? prior : '';
+  renderOwnerReport(select.value);
+}
+
+// Shows each of the selected owner's homes with a breakdown of completed services by
+// type/count at that home — the whole point being an admin can answer "how many
+// cleanings has this owner's lake house had" without digging through the full
+// appointment list by hand.
+window.renderOwnerReport = (ownerId) => {
+  const container = document.getElementById('reportOwnerDetail');
+  if (!ownerId) {
+    container.innerHTML = '<div class="empty-state">Pick an owner above to see their homes\' service history.</div>';
+    return;
+  }
+  const homes = (state.reportCustomers || [])
+    .filter((c) => String(c.ownerId) === String(ownerId))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  if (!homes.length) {
+    container.innerHTML = '<div class="empty-state">This owner has no homes on file yet.</div>';
+    return;
+  }
+  container.innerHTML = homes.map((home) => {
+    const homeAppts = (state.reportAppointments || []).filter(
+      (a) => a.customerId === home.id && a.status === 'completed'
+    );
+    const byType = {};
+    homeAppts.forEach((a) => {
+      const type = a.serviceType || 'Service';
+      byType[type] = (byType[type] || 0) + 1;
+    });
+    const typeEntries = Object.entries(byType).sort((a, b) => b[1] - a[1]);
+    return `
+      <div class="profile-section" style="background:#f7fafb; margin-bottom:10px;">
+        <h4 style="margin:0 0 6px;">${home.name} <span class="portal-hint">(${homeAppts.length} completed service${homeAppts.length === 1 ? '' : 's'})</span></h4>
+        ${typeEntries.length ? `
+          <table class="data-table">
+            <thead><tr><th>Service</th><th>Times completed</th></tr></thead>
+            <tbody>${typeEntries.map(([type, count]) => `<tr><td>${type}</td><td>${count}</td></tr>`).join('')}</tbody>
+          </table>
+        ` : '<div class="empty-state">No completed services yet.</div>'}
+      </div>
+    `;
+  }).join('');
+};
+
+document.getElementById('reportOwnerSelect').addEventListener('change', (e) => renderOwnerReport(e.target.value));
 
 // Frequency-priced services don't have one price — resolvePrice() normally figures out
 // which tier applies from the CUSTOMER's on-file service frequency, but that's exactly

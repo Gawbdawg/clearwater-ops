@@ -1,8 +1,59 @@
 const express = require('express');
 const store = require('../lib/store');
-const { checkPassword, sanitizeOwner, requireAdminAuth } = require('../lib/auth');
+const { checkPassword, hashPassword, sanitizeOwner, requireAdminAuth } = require('../lib/auth');
 const { requestLoginCode, verifyLoginCode } = require('../lib/emailLogin');
 const router = express.Router();
+
+// Lets a brand-new property owner create their own account instead of waiting on the
+// admin to provision one — they land with no property linked yet (see the "no
+// properties yet" state in showDash() in public/owner.js, which prompts them straight
+// into the "Add a property" form), and go through the same first-login Terms of
+// Service gate as anyone else since agreedToTerms starts false here too. Blocks
+// signing up again with an email that's already on file — including accounts the
+// admin bulk-created with no password yet — and points them at the email+code login
+// instead, since that already works for a passwordless account.
+router.post('/signup', (req, res) => {
+  const { name, email, phone, username, password } = req.body;
+  if (!name || !name.trim()) return res.status(400).json({ error: 'Name is required' });
+  if (!email || !email.trim()) return res.status(400).json({ error: 'Email is required' });
+  if (!password || password.length < 6) {
+    return res.status(400).json({ error: 'Choose a password with at least 6 characters' });
+  }
+
+  const normEmail = email.trim().toLowerCase();
+  const existingByEmail = store.getAll('owners').find(
+    (o) => (o.email || '').trim().toLowerCase() === normEmail
+  );
+  if (existingByEmail) {
+    return res.status(400).json({
+      error: 'An account already exists for that email. Log in instead, or use "Send me a code" if you don\'t have a password set yet.',
+    });
+  }
+
+  let finalUsername = '';
+  if (username && username.trim()) {
+    const takenUsername = store.getAll('owners').find(
+      (o) => (o.username || '').toLowerCase() === username.trim().toLowerCase()
+    );
+    if (takenUsername) return res.status(400).json({ error: 'That username is already taken' });
+    finalUsername = username.trim();
+  }
+
+  const owner = store.create('owners', {
+    name: name.trim(),
+    email: normEmail,
+    phone: phone ? phone.trim() : '',
+    username: finalUsername,
+    passwordHash: hashPassword(password),
+    customPricing: {},
+    billingMode: 'perJob',
+    newsletterSubscribed: true,
+    agreedToTerms: false,
+    agreedToTermsAt: null,
+  });
+  req.session.ownerId = owner.id;
+  res.status(201).json(sanitizeOwner(owner));
+});
 
 router.post('/login', (req, res) => {
   const { username, password } = req.body;

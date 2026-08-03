@@ -9,6 +9,7 @@ async function api(path, opts = {}) {
 }
 
 const loginView = document.getElementById('loginView');
+const signupView = document.getElementById('signupView');
 const dashView = document.getElementById('dashView');
 const termsView = document.getElementById('termsView');
 const loginError = document.getElementById('loginError');
@@ -45,6 +46,7 @@ async function checkSession() {
     await enterPortal(owner);
   } catch (e) {
     loginView.classList.remove('hidden');
+    signupView.classList.add('hidden');
     termsView.classList.add('hidden');
     dashView.classList.add('hidden');
     logoutBtn.style.display = 'none';
@@ -64,6 +66,7 @@ async function enterPortal(owner) {
 
 function showTermsGate(owner) {
   loginView.classList.add('hidden');
+  signupView.classList.add('hidden');
   dashView.classList.add('hidden');
   termsView.classList.remove('hidden');
   document.getElementById('agreeTermsCheckbox').checked = false;
@@ -98,6 +101,7 @@ function showTermsGate(owner) {
 
 async function showDash(owner) {
   loginView.classList.add('hidden');
+  signupView.classList.add('hidden');
   termsView.classList.add('hidden');
   dashView.classList.remove('hidden');
   logoutBtn.style.display = '';
@@ -596,7 +600,7 @@ async function loadVisits() {
   el.innerHTML = visits.map((v) => `
     <div class="owner-list-item" style="align-items:flex-start; flex-direction:column;">
       <div style="width:100%;">
-        <strong>${niceDate(v.date)}${v.startTime ? ' · ' + v.startTime : ''}</strong>
+        <strong>${niceDate(v.date)}</strong>
         ${properties.length > 1 ? `<span class="job-meta">${v.propertyName}</span>` : ''}
         <span class="badge ${v.status === 'completed' ? 'completed' : v.date < today ? 'draft' : 'scheduled'}">${v.status}</span>
         ${v.serviceType ? `<div class="job-meta">${v.serviceType}</div>` : ''}
@@ -1156,6 +1160,53 @@ document.getElementById('codeInput').addEventListener('keydown', (e) => {
 logoutBtn.addEventListener('click', async () => {
   await api('/api/owner-auth/logout', { method: 'POST' });
   checkSession();
+});
+
+// ---- Self sign-up (brand-new owners with no admin-provisioned account yet) ----
+
+document.getElementById('showSignupBtn').addEventListener('click', () => {
+  loginError.classList.add('hidden');
+  loginView.classList.add('hidden');
+  document.getElementById('signupError').classList.add('hidden');
+  signupView.classList.remove('hidden');
+});
+
+document.getElementById('backToLoginBtn').addEventListener('click', () => {
+  signupView.classList.add('hidden');
+  loginView.classList.remove('hidden');
+});
+
+document.getElementById('createAccountBtn').addEventListener('click', async () => {
+  const errEl = document.getElementById('signupError');
+  errEl.classList.add('hidden');
+  const name = document.getElementById('signupName').value.trim();
+  const email = document.getElementById('signupEmail').value.trim();
+  const phone = document.getElementById('signupPhone').value.trim();
+  const username = document.getElementById('signupUsername').value.trim();
+  const password = document.getElementById('signupPassword').value;
+  if (!name || !email || !password) {
+    errEl.textContent = 'Name, email, and a password are required.';
+    errEl.classList.remove('hidden');
+    return;
+  }
+  const btn = document.getElementById('createAccountBtn');
+  btn.disabled = true;
+  try {
+    const owner = await api('/api/owner-auth/signup', {
+      method: 'POST',
+      body: JSON.stringify({ name, email, phone, username, password }),
+    });
+    await enterPortal(owner);
+  } catch (e) {
+    errEl.textContent = e.message;
+    errEl.classList.remove('hidden');
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+document.getElementById('signupPassword').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') document.getElementById('createAccountBtn').click();
 });
 
 // ---- Newsletter opt in/out ----
