@@ -570,9 +570,14 @@ async function loadOwners() {
 function renderOwnerTable() {
   const filterEl = document.getElementById('ownerTypeFilter');
   const filter = filterEl ? filterEl.value : '';
-  const owners = filter
+  let owners = filter
     ? state.owners.filter((o) => (o.propertyTypes || []).includes(filter))
     : state.owners;
+  const searchEl = document.getElementById('ownerSearchInput');
+  const search = searchEl ? searchEl.value.trim().toLowerCase() : '';
+  if (search) {
+    owners = owners.filter((o) => (o.name || '').toLowerCase().includes(search));
+  }
   const tbody = document.querySelector('#ownerTable tbody');
   tbody.innerHTML = owners.map((o) => `
     <tr>
@@ -591,10 +596,15 @@ function renderOwnerTable() {
         <button class="btn small danger" onclick="deleteOwner(${o.id})">Delete</button>
       </td>
     </tr>
-  `).join('') || '<tr><td colspan="9" class="empty-state">No owner accounts yet. Create one from the Homes tab when editing a home.</td></tr>';
+  `).join('') || `<tr><td colspan="9" class="empty-state">${
+    state.owners.length === 0
+      ? 'No owner accounts yet. Create one from the Homes tab when editing a home.'
+      : 'No owners match your search/filter.'
+  }</td></tr>`;
 }
 
 document.getElementById('ownerTypeFilter').addEventListener('change', renderOwnerTable);
+document.getElementById('ownerSearchInput').addEventListener('input', renderOwnerTable);
 
 // Same badge language as the Homes tab's Vacation rental / Residential type — an
 // owner can show both if their linked homes are a mix, or neither yet if they have
