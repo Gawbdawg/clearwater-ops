@@ -87,6 +87,7 @@ async function loadJobs() {
           <div class="job-customer">${j.customerName}</div>
           <div class="job-meta">${j.serviceType}${j.customerAddress ? ' · ' + j.customerAddress : ''}</div>
           ${j.customerPhone ? `<div class="job-meta">${j.customerPhone}</div>` : ''}
+          ${j.customerNotes ? `<div class="job-meta job-property-note">Property note: ${j.customerNotes}</div>` : ''}
           ${j.notes ? `<div class="job-meta">Note: ${j.notes}</div>` : ''}
           ${renderEquipmentMeta(j.customerEquipment)}
         </div>
@@ -442,6 +443,7 @@ window.onTechCalDayClick = (dateStr) => {
         <div>
           <strong>${a.customerName}</strong>
           <div class="job-meta">${a.serviceType || ''}</div>
+          ${a.customerNotes ? `<div class="job-meta job-property-note">Property note: ${a.customerNotes}</div>` : ''}
         </div>
         <span class="badge ${a.status}">${a.status}</span>
       </div>

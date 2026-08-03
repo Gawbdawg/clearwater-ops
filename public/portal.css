@@ -26,6 +26,13 @@
 .job-card .job-date { font-size: 13px; color: #0b5f7a; font-weight: 700; }
 .job-card .job-customer { font-size: 16px; font-weight: 600; margin-top: 2px; }
 .job-card .job-meta { font-size: 13px; color: #5a7078; margin-top: 4px; }
+/* Admin-set notes about the property itself (gate codes, pet warnings, access
+   instructions, etc.) — set apart from the plain gray meta lines and from a
+   one-off job-specific note, since a tech shouldn't have to hunt for these. */
+.job-card .job-property-note {
+  color: #7a4a00; background: #fff6e6; border: 1px solid #ffe2a8;
+  border-radius: 6px; padding: 6px 8px; margin-top: 6px;
+}
 .job-card .job-actions { margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap; }
 .job-photos { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
 .job-photo { width: 90px; text-align: center; }
