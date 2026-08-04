@@ -216,6 +216,8 @@ document.getElementById('editPropertyBtn').addEventListener('click', () => {
   document.getElementById('epAddress').value = p.address || '';
   document.getElementById('epType').value = ['vacation', 'repair'].includes(p.type) ? p.type : 'residential';
   document.getElementById('editPropertyError').classList.add('hidden');
+  document.getElementById('epAddressVerifyStatus').textContent = '';
+  lastVerifiedPropertyAddress.epAddress = null;
   document.getElementById('propertyDetailsView').classList.add('hidden');
   document.getElementById('editPropertyForm').classList.remove('hidden');
 });
@@ -1261,10 +1263,42 @@ document.getElementById('maintenanceOptOutToggle').addEventListener('change', as
   }
 });
 
+// ---- Live address check for the add/edit property forms ----
+// Same purpose as verifyAddressField in the admin's app.js: a heads-up as the owner
+// types, before they hit Save. The actual save is what really enforces this
+// (see POST/PUT /api/owner/properties in routes/ownerPortal.js) — an address the map
+// can't find is rejected there regardless of whether this check ran at all.
+const lastVerifiedPropertyAddress = {};
+
+async function checkPropertyAddressField(inputId, statusId) {
+  const input = document.getElementById(inputId);
+  const statusEl = document.getElementById(statusId);
+  const address = input.value.trim();
+  if (!address) { statusEl.textContent = ''; lastVerifiedPropertyAddress[inputId] = null; return; }
+  if (address === lastVerifiedPropertyAddress[inputId]) return;
+  statusEl.textContent = 'Checking address…';
+  try {
+    const result = await api('/api/owner/verify-address', { method: 'POST', body: JSON.stringify({ address }) });
+    lastVerifiedPropertyAddress[inputId] = address;
+    if (result.found) {
+      statusEl.innerHTML = `<span style="color:#256b32;">✓ Found: ${result.displayName}</span>`;
+    } else {
+      statusEl.innerHTML = `<span style="color:#a3382f;">⚠ Couldn't find this address on the map — double check for typos. Saving will be blocked until it's found.</span>`;
+    }
+  } catch (e) {
+    statusEl.textContent = '';
+  }
+}
+
+document.getElementById('apAddress').addEventListener('blur', () => checkPropertyAddressField('apAddress', 'apAddressVerifyStatus'));
+document.getElementById('epAddress').addEventListener('blur', () => checkPropertyAddressField('epAddress', 'epAddressVerifyStatus'));
+
 // ---- Owner self-service: add a property ----
 document.getElementById('showAddPropertyBtn').addEventListener('click', () => {
   document.getElementById('addPropertyRow').classList.add('hidden');
   document.getElementById('addPropertyForm').classList.remove('hidden');
+  document.getElementById('apAddressVerifyStatus').textContent = '';
+  lastVerifiedPropertyAddress.apAddress = null;
 });
 
 document.getElementById('cancelAddPropertyBtn').addEventListener('click', () => {

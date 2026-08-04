@@ -319,7 +319,7 @@ window.verifyAddressField = async () => {
     if (result.found) {
       statusEl.innerHTML = `<span style="color:#256b32;">✓ Found: ${result.displayName}</span>`;
     } else {
-      statusEl.innerHTML = `<span style="color:#a3382f;">⚠ Couldn't find this address on the map — double check for typos. You can still save it.</span>`;
+      statusEl.innerHTML = `<span style="color:#a3382f;">⚠ Couldn't find this address on the map — double check for typos. Saving will be blocked until it's found.</span>`;
     }
   } catch (e) {
     statusEl.textContent = '';

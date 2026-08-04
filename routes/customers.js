@@ -132,10 +132,15 @@ router.post('/verify-address', async (req, res) => {
   }
 });
 
-// Best-effort geocode used right after a create/update — deliberately swallows failures
-// (a typo'd or too-new/rural address shouldn't block saving the customer) and just
-// reports back whether it worked, via the fields merged into `updates`.
-async function tryGeocode(address, updates) {
+// Geocodes an address a home is being saved with (new home, or an existing home's
+// address being changed) and requires it to actually be found — a home the geocoder
+// can't locate never gets saved with that address at all, rather than being saved
+// anyway with a "not located" badge for someone to notice later. An address left
+// blank is still allowed (that's "no address on file yet," a different thing from
+// "an address that doesn't check out"). Throws on failure; callers turn that into a
+// 400 rather than swallowing it. Sets the same lat/lng/geocodedAddress/addressVerified
+// fields onto `updates` on success that the rest of the app already expects.
+async function geocodeOrThrow(address, updates) {
   if (!address || !address.trim()) {
     updates.lat = null;
     updates.lng = null;
@@ -143,18 +148,11 @@ async function tryGeocode(address, updates) {
     updates.addressVerified = false;
     return;
   }
-  try {
-    const { lat, lng, displayName } = await geocodeAddress(address);
-    updates.lat = lat;
-    updates.lng = lng;
-    updates.geocodedAddress = displayName;
-    updates.addressVerified = true;
-  } catch (err) {
-    updates.lat = null;
-    updates.lng = null;
-    updates.geocodedAddress = '';
-    updates.addressVerified = false;
-  }
+  const { lat, lng, displayName } = await geocodeAddress(address);
+  updates.lat = lat;
+  updates.lng = lng;
+  updates.geocodedAddress = displayName;
+  updates.addressVerified = true;
 }
 
 // Cleans a raw { [serviceId]: price } object the same way routes/owners.js does for
@@ -187,7 +185,11 @@ router.post('/', async (req, res) => {
   }
 
   const geo = {};
-  await tryGeocode(address, geo);
+  try {
+    await geocodeOrThrow(address, geo);
+  } catch (err) {
+    return res.status(400).json({ error: `Couldn't find that address on the map (${err.message}) — double check it for typos and try again.` });
+  }
 
   const customer = store.create('customers', {
     name,
@@ -231,12 +233,19 @@ router.put('/:id', async (req, res) => {
     updates.customPricing = cleanCustomPricing(updates.customPricing);
   }
 
-  // Address changed — re-geocode right away instead of just clearing the cached
-  // location, so a typo shows up immediately rather than waiting for the next
-  // "Geocode all addresses" pass (or worse, a tech getting routed to the wrong place).
+  // Address changed — re-geocode right away and reject the save if it can't be found,
+  // rather than saving a typo/bad address with a "not located" badge for someone to
+  // notice later (or worse, a tech getting routed to the wrong place). Only checked
+  // when the address is actually being changed here — an existing home with an
+  // already-bad address on file isn't retroactively blocked from an unrelated edit
+  // (phone number, notes, etc.); that cleanup path is Settings → "Geocode all addresses".
   const existing = store.getById('customers', req.params.id);
   if (existing && updates.address !== undefined && updates.address !== existing.address) {
-    await tryGeocode(updates.address, updates);
+    try {
+      await geocodeOrThrow(updates.address, updates);
+    } catch (err) {
+      return res.status(400).json({ error: `Couldn't find that address on the map (${err.message}) — double check it for typos and try again.` });
+    }
   }
 
   const updated = store.update('customers', req.params.id, updates);

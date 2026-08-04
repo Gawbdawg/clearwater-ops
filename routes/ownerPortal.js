@@ -69,12 +69,29 @@ router.get('/properties', (req, res) => {
   res.json(properties);
 });
 
+// Same "can the map actually find this" pre-check the admin's Homes tab already has,
+// exposed here so the owner portal's add/edit property forms can show a live status
+// as the owner types, before they ever click Save. The real enforcement is in the
+// create/update handlers below — this is just an early warning, same relationship as
+// routes/customers.js's verify-address has to that form's actual save.
+router.post('/verify-address', async (req, res) => {
+  const { address } = req.body;
+  if (!address || !address.trim()) return res.status(400).json({ error: 'No address given' });
+  try {
+    const { lat, lng, displayName } = await geocodeAddress(address);
+    res.json({ found: true, lat, lng, displayName });
+  } catch (err) {
+    res.json({ found: false, error: err.message });
+  }
+});
+
 // Lets an owner add their own property from the portal (e.g. on first login, or
 // adding a second hot tub later) instead of waiting on the admin to create it —
 // always attached to their own account; there's no way to pass a different ownerId
-// here. Best-effort geocodes the address right away, same as the admin's customer
-// form, so it's routable as soon as a tech is assigned. A blank/unrecognized address
-// just leaves it unlocated rather than blocking the save.
+// here. Geocodes the address right away and requires it to actually be found, same
+// as the admin's Homes tab — an address the map can't locate is never saved, rather
+// than being saved unlocated for someone to notice later. A blank address is still
+// fine (no address on file yet is different from a bad one).
 router.post('/properties', async (req, res) => {
   const { name, address, type } = req.body;
   if (!name || !name.trim()) return res.status(400).json({ error: 'A property name is required' });
@@ -85,8 +102,7 @@ router.post('/properties', async (req, res) => {
       const { lat, lng, displayName } = await geocodeAddress(address);
       Object.assign(geo, { lat, lng, geocodedAddress: displayName, addressVerified: true });
     } catch (err) {
-      // leave geo as the "not located" defaults — a typo or too-new/rural address
-      // shouldn't block the owner from saving their property
+      return res.status(400).json({ error: `Couldn't find that address on the map (${err.message}) — double check it for typos and try again.` });
     }
   }
 
@@ -115,8 +131,11 @@ router.post('/properties', async (req, res) => {
 // calendar tab only appears for type:'vacation' properties (see onPropertyChange in
 // public/owner.js), that also meant no way to ever paste in their iCal link, since the
 // tab that holds that field was permanently hidden for that property.
-// Re-geocodes the address the same best-effort way property creation does, only if the
-// address text actually changed (an unrelated name/type edit shouldn't re-run it).
+// Re-geocodes the address the same way property creation does, only if the address
+// text actually changed (an unrelated name/type edit shouldn't re-run it) — and same
+// as creation, rejects the save outright if the new address can't be found rather
+// than saving it unlocated. An existing property whose address was already unlocated
+// before this edit isn't retroactively blocked by touching some other field.
 router.put('/properties/:id', async (req, res) => {
   const property = myProperty(req, req.params.id);
   if (!property) return res.status(404).json({ error: 'Property not found' });
@@ -134,7 +153,7 @@ router.put('/properties/:id', async (req, res) => {
       const { lat, lng, displayName } = await geocodeAddress(updates.address);
       Object.assign(updates, { lat, lng, geocodedAddress: displayName, addressVerified: true });
     } catch (err) {
-      Object.assign(updates, { lat: null, lng: null, geocodedAddress: '', addressVerified: false });
+      return res.status(400).json({ error: `Couldn't find that address on the map (${err.message}) — double check it for typos and try again.` });
     }
   } else if (!updates.address) {
     Object.assign(updates, { lat: null, lng: null, geocodedAddress: '', addressVerified: false });
