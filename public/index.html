@@ -65,6 +65,10 @@
           <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94z"/></svg>
           Technicians
         </button>
+        <button class="tab-btn" data-tab="timesheets">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          Timesheets
+        </button>
         <button class="tab-btn" data-tab="invoices">
           <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
           Invoices
@@ -195,7 +199,28 @@
         </div>
         <p class="portal-hint">Technicians log into their own job list at <code id="techPortalLink"></code> using the username/password you set below.</p>
         <table class="data-table" id="techTable">
-          <thead><tr><th>Name</th><th>Phone</th><th>Email</th><th>Username</th><th>Login set up?</th><th>Upcoming time off</th><th></th></tr></thead>
+          <thead><tr><th>Name</th><th>Phone</th><th>Email</th><th>Hourly rate</th><th>Username</th><th>Login set up?</th><th>Upcoming time off</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </section>
+
+      <!-- Timesheets / Payroll -->
+      <section id="tab-timesheets" class="tab-panel">
+        <div class="panel-header">
+          <h1>Timesheets</h1>
+          <button class="btn primary" id="newTimeEntryBtn">+ Add entry</button>
+        </div>
+        <p class="portal-hint">Hours, gas stipend, and pay computed from each technician's clock in/out in their portal. Correct a mistake (forgotten clock-out, typo) with Edit/Delete below.</p>
+        <div class="filter-row">
+          <label>Technician
+            <select id="timesheetTechFilter"><option value="">All technicians</option></select>
+          </label>
+          <label>From <input type="date" id="timesheetFromFilter" /></label>
+          <label>To <input type="date" id="timesheetToFilter" /></label>
+        </div>
+        <div class="stat-cards" id="timesheetStats"></div>
+        <table class="data-table" id="timesheetTable">
+          <thead><tr><th>Technician</th><th>Date</th><th>Hours</th><th>Gas stipend</th><th>Wages</th><th>Pay</th><th></th></tr></thead>
           <tbody></tbody>
         </table>
       </section>

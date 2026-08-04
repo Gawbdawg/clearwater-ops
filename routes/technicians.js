@@ -20,7 +20,7 @@ router.get('/', (req, res) => {
 });
 
 router.post('/', (req, res) => {
-  const { name, email, phone, username, password } = req.body;
+  const { name, email, phone, username, password, hourlyRate } = req.body;
   if (!name) return res.status(400).json({ error: 'Name is required' });
 
   if (username) {
@@ -36,16 +36,18 @@ router.post('/', (req, res) => {
     phone: phone || '',
     username: username || '',
     passwordHash: password ? hashPassword(password) : '',
+    hourlyRate: hourlyRate !== undefined && hourlyRate !== '' ? Number(hourlyRate) : 0,
   });
   res.status(201).json(sanitizeTechnician(tech));
 });
 
 router.put('/:id', (req, res) => {
-  const { name, email, phone, username, password } = req.body;
+  const { name, email, phone, username, password, hourlyRate } = req.body;
   const updates = {};
   if (name !== undefined) updates.name = name;
   if (email !== undefined) updates.email = email;
   if (phone !== undefined) updates.phone = phone;
+  if (hourlyRate !== undefined) updates.hourlyRate = hourlyRate === '' ? 0 : Number(hourlyRate);
 
   if (username !== undefined) {
     if (username) {

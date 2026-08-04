@@ -18,6 +18,7 @@ const serviceRequestsRouter = require('./routes/serviceRequests');
 const settingsRouter = require('./routes/settings');
 const servicesRouter = require('./routes/services');
 const addonsRouter = require('./routes/addons');
+const timesheetsRouter = require('./routes/timesheets');
 const newsletterRouter = require('./routes/newsletter');
 const exportRouter = require('./routes/export');
 const adminAuthRouter = require('./routes/adminAuth');
@@ -77,6 +78,7 @@ app.use('/api/service-requests', requireAdminAuth, serviceRequestsRouter);
 app.use('/api/settings', requireAdminAuth, settingsRouter);
 app.use('/api/services', requireAdminAuth, servicesRouter);
 app.use('/api/addons', requireAdminAuth, addonsRouter);
+app.use('/api/timesheets', requireAdminAuth, timesheetsRouter);
 app.use('/api/export', requireAdminAuth, exportRouter);
 app.use('/api/newsletter', requireAdminAuth, newsletterRouter);
 

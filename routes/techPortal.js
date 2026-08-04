@@ -2,20 +2,23 @@ const express = require('express');
 const store = require('../lib/store');
 const { requireTechAuth, sanitizeTechnician } = require('../lib/auth');
 const { orderStopsByRoute } = require('../lib/routeOptimizer');
+const { geocodeAddress } = require('../lib/geocode');
+const { summarizeByDay } = require('../lib/timesheet');
 const { savePhoto, deletePhoto } = require('../lib/uploads');
 const { syncInvoiceForCompletedAppointment } = require('../lib/autoInvoice');
-const { sendEmail } = require('../lib/mailer');
 const router = express.Router();
 
 router.use(requireTechAuth);
 
-// Lets a tech correct their own email or phone (used for "email me my route" below and
-// general contact info) — deliberately narrow, just those two fields, so this can't be
-// used to touch login credentials.
+// Lets a tech correct their own email/phone, and update their saved starting address
+// (pre-filled next time they open Today so they don't have to retype it every
+// morning, but editable any time — see POST /optimize-route below) — deliberately
+// narrow, just these fields, so this can't be used to touch login credentials.
 router.put('/me', (req, res) => {
   const updates = {};
   if (req.body.email !== undefined) updates.email = req.body.email;
   if (req.body.phone !== undefined) updates.phone = req.body.phone;
+  if (req.body.lastStartAddress !== undefined) updates.lastStartAddress = req.body.lastStartAddress;
   const updated = store.update('technicians', req.session.technicianId, updates);
   if (!updated) return res.status(404).json({ error: 'Technician not found' });
   res.json(sanitizeTechnician(updated));
@@ -39,6 +42,23 @@ router.get('/addons', (req, res) => {
   res.json(hideAddonPrices(catalog));
 });
 
+// Attaches customer/property details onto a raw appointment row — shared by every
+// endpoint below that returns appointments to the tech, so the shape stays consistent.
+function enrichAppt(a) {
+  const customer = store.getById('customers', a.customerId);
+  return {
+    ...a,
+    customerName: customer ? customer.name : 'Unknown customer',
+    customerPhone: customer ? customer.phone : '',
+    customerAddress: customer ? customer.address : '',
+    customerNotes: customer ? customer.notes : '',
+    customerEquipment: customer ? customer.equipment : null,
+    lat: customer ? customer.lat : undefined,
+    lng: customer ? customer.lng : undefined,
+    addons: hideAddonPrices(a.addons),
+  };
+}
+
 // Only this technician's appointments — today and upcoming by default, a specific date
 // via ?date=, or every job regardless of date via ?all=1 (used by the Calendar tab,
 // which needs to show past and future months, not just what's upcoming).
@@ -57,20 +77,7 @@ router.get('/appointments', (req, res) => {
     appts = appts.filter((a) => a.date >= today && a.status !== 'cancelled');
   }
 
-  const enriched = appts.map((a) => {
-    const customer = store.getById('customers', a.customerId);
-    return {
-      ...a,
-      customerName: customer ? customer.name : 'Unknown customer',
-      customerPhone: customer ? customer.phone : '',
-      customerAddress: customer ? customer.address : '',
-      customerNotes: customer ? customer.notes : '',
-      customerEquipment: customer ? customer.equipment : null,
-      lat: customer ? customer.lat : undefined,
-      lng: customer ? customer.lng : undefined,
-      addons: hideAddonPrices(a.addons),
-    };
-  });
+  const enriched = appts.map(enrichAppt);
 
   const settings = store.getSettings();
   const depot = (typeof settings.depotLat === 'number' && typeof settings.depotLng === 'number')
@@ -194,69 +201,92 @@ router.delete('/appointments/:id/photos/:photoId', (req, res) => {
   res.json(updated);
 });
 
-// Emails the technician their own route-ordered stops for one day (defaults to today)
-// — same nearest-neighbor ordering from the shop used everywhere else in the app, just
-// triggered by the tech themselves instead of the admin copying/pasting a message from
-// the Daily Schedule tab. Uses lib/mailer's existing email setup (and its dry-run
-// console fallback if that isn't configured yet). Deliberately email-only — carrier
-// email-to-SMS gateways used to be a free way to land this as a real text, but AT&T
-// shut theirs down in June 2025, T-Mobile's quietly stopped delivering in late 2024,
-// and Verizon's has an announced shutdown for March 2027, so that approach isn't
-// reliable enough to keep around.
-router.post('/text-my-route', async (req, res) => {
+// Re-orders one day's stops (defaults to today) into an efficient route starting from
+// wherever the tech is actually starting from that morning, instead of the fixed shop
+// depot GET /appointments uses. Geocodes the given address fresh each time (addresses
+// aren't saved/cached here since a starting point is often a home address or wherever
+// last night's job ended, not a fixed place) and also saves it as this tech's
+// lastStartAddress so it's pre-filled next time they open Today. Cancelled jobs are
+// left out, same as the default schedule view.
+router.post('/optimize-route', async (req, res) => {
   const technicianId = req.session.technicianId;
-  const tech = store.getById('technicians', technicianId);
-  if (!tech) return res.status(404).json({ error: 'Technician not found' });
-  if (!tech.email) {
-    return res.status(400).json({ error: 'No email is on file for your account yet — add one below, or ask the admin to add one under Technicians.' });
+  const date = req.body.date || new Date().toISOString().slice(0, 10);
+  const address = (req.body.address || '').trim();
+  if (!address) return res.status(400).json({ error: 'Enter the address you\'re starting from.' });
+
+  let start;
+  try {
+    start = await geocodeAddress(address);
+  } catch (err) {
+    return res.status(400).json({ error: err.message || 'Could not find that starting address.' });
   }
 
-  const date = req.body.date || new Date().toISOString().slice(0, 10);
   const appts = store.getAll('appointments')
     .filter((a) => a.technicianId === technicianId && a.date === date && a.status !== 'cancelled')
-    .map((a) => {
-      const customer = store.getById('customers', a.customerId);
-      return { ...a, customer, lat: customer ? customer.lat : undefined, lng: customer ? customer.lng : undefined };
-    });
+    .map(enrichAppt);
 
-  const settings = store.getSettings();
-  const depot = (typeof settings.depotLat === 'number' && typeof settings.depotLng === 'number')
-    ? { lat: settings.depotLat, lng: settings.depotLng }
-    : null;
+  const { ordered, unroutable } = orderStopsByRoute({ lat: start.lat, lng: start.lng }, appts);
 
-  let ordered = appts.slice().sort((a, b) => a.startTime.localeCompare(b.startTime));
-  let routed = false;
-  let missingCount = 0;
-  if (depot && appts.length > 0) {
-    const { ordered: routedStops, unroutable } = orderStopsByRoute(depot, appts);
-    ordered = [...routedStops, ...unroutable];
-    routed = true;
-    missingCount = unroutable.length;
-  }
+  store.update('technicians', technicianId, { lastStartAddress: address });
 
-  let text = `Hi ${tech.name}, here's your Clear Water schedule for ${date}`;
-  text += routed ? ' (in efficient route order from the shop):\n\n' : ':\n\n';
-  if (ordered.length === 0) {
-    text += 'No appointments scheduled that day.';
-  } else {
-    ordered.forEach((a, i) => {
-      text += `${i + 1}. ${a.customer ? a.customer.name : 'Unknown'} (${a.serviceType || 'Service'})\n`;
-      if (a.customer && a.customer.address) text += `   ${a.customer.address}\n`;
-      if (a.customer && a.customer.phone) text += `   ${a.customer.phone}\n`;
-      if (a.customer && a.customer.notes) text += `   Property note: ${a.customer.notes}\n`;
-      if (a.notes) text += `   Note: ${a.notes}\n`;
-    });
-    if (routed && missingCount > 0) {
-      text += `\n(${missingCount} stop${missingCount === 1 ? '' : 's'} listed last — no map location on file yet.)`;
-    }
-  }
+  res.json({
+    date,
+    start: { address, lat: start.lat, lng: start.lng, displayName: start.displayName || address },
+    ordered,
+    unroutable,
+  });
+});
 
-  try {
-    const result = await sendEmail({ to: tech.email, subject: `Your Clear Water route — ${date}`, text });
-    res.json({ sent: true, dryRun: !!result.dryRun, date });
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
+// ---- Clock in / clock out + pay ----
+// One row per clock-in "session" (see lib/store.js's timeEntries collection). A tech
+// can clock in/out more than once in a day; hours for a day are the sum of every
+// session's duration that day. The $10 gas stipend is added automatically the moment a
+// tech clocks in for the day — it's tagged onto whichever entry happens to be the
+// FIRST one created for that tech+date, so it's never duplicated across multiple
+// clock-ins on the same day.
+router.get('/time-entries', (req, res) => {
+  const technicianId = req.session.technicianId;
+  const days = Number(req.query.days) || 30;
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - days);
+  const cutoffStr = cutoff.toISOString().slice(0, 10);
+
+  const entries = store.getAll('timeEntries')
+    .filter((e) => e.technicianId === technicianId && e.date >= cutoffStr)
+    .sort((a, b) => (a.clockInAt < b.clockInAt ? 1 : -1));
+
+  const openEntry = entries.find((e) => !e.clockOutAt) || null;
+  const tech = store.getById('technicians', technicianId);
+  const days_ = summarizeByDay(entries, () => tech);
+
+  res.json({ entries, days: days_, openEntry, hourlyRate: tech ? (tech.hourlyRate || 0) : 0 });
+});
+
+router.post('/clock-in', (req, res) => {
+  const technicianId = req.session.technicianId;
+  const already = store.getAll('timeEntries').find((e) => e.technicianId === technicianId && !e.clockOutAt);
+  if (already) return res.status(400).json({ error: "You're already clocked in — clock out first." });
+
+  const now = new Date();
+  const date = now.toISOString().slice(0, 10);
+  const isFirstOfDay = !store.getAll('timeEntries').some((e) => e.technicianId === technicianId && e.date === date);
+
+  const entry = store.create('timeEntries', {
+    technicianId,
+    date,
+    clockInAt: now.toISOString(),
+    clockOutAt: null,
+    gasStipendAdded: isFirstOfDay,
+  });
+  res.status(201).json(entry);
+});
+
+router.post('/clock-out', (req, res) => {
+  const technicianId = req.session.technicianId;
+  const open = store.getAll('timeEntries').find((e) => e.technicianId === technicianId && !e.clockOutAt);
+  if (!open) return res.status(400).json({ error: "You're not currently clocked in." });
+  const updated = store.update('timeEntries', open.id, { clockOutAt: new Date().toISOString() });
+  res.json(updated);
 });
 
 // ---- Time off (self-service day blocking) ----

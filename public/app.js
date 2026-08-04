@@ -34,6 +34,7 @@ function loadTab(tab) {
   if (tab === 'customers') loadCustomers();
   if (tab === 'owners') loadOwners();
   if (tab === 'technicians') loadTechnicians();
+  if (tab === 'timesheets') loadTimesheets();
   if (tab === 'invoices') loadInvoices();
   if (tab === 'schedule') loadSchedule();
   if (tab === 'propertycal') loadBookings();
@@ -865,6 +866,7 @@ async function loadTechnicians() {
       <td>${t.name}</td>
       <td>${t.phone || ''}</td>
       <td>${t.email || ''}</td>
+      <td>${t.hourlyRate ? money(t.hourlyRate) + '/hr' : '<span style="color:var(--text-faint);">Not set</span>'}</td>
       <td>${t.username || '—'}</td>
       <td>${t.hasPassword ? '<span class="badge completed">Yes</span>' : '<span class="badge scheduled">Not set</span>'}</td>
       <td>${renderTechTimeOff(t)}</td>
@@ -874,7 +876,7 @@ async function loadTechnicians() {
         <button class="btn small danger" onclick="deleteTech(${t.id})">Delete</button>
       </td>
     </tr>
-  `).join('') || '<tr><td colspan="7" class="empty-state">No technicians yet.</td></tr>';
+  `).join('') || '<tr><td colspan="8" class="empty-state">No technicians yet.</td></tr>';
 }
 
 // Self-blocked days the tech set from their own portal (see routes/techPortal.js
@@ -906,7 +908,8 @@ function techForm(t = {}) {
   return `
     <label>Name<input id="f_tname" value="${t.name || ''}" /></label>
     <label>Phone<input id="f_tphone" value="${t.phone || ''}" /></label>
-    <label>Email <span style="font-weight:400; color:var(--text-faint);">(used to email this tech their route)</span><input id="f_temail" value="${t.email || ''}" /></label>
+    <label>Email<input id="f_temail" value="${t.email || ''}" /></label>
+    <label>Hourly rate <span style="font-weight:400; color:var(--text-faint);">(used to compute pay from clocked hours)</span><input type="number" step="0.01" min="0" id="f_thourlyrate" value="${t.hourlyRate || ''}" placeholder="e.g. 22.00" /></label>
     <div style="display:flex; flex-direction: column; gap: 12px; border-top: 1px solid #eef1f2; padding-top: 12px;">
       <div style="font-size:13px; font-weight:600; color:#33505c;">Technician portal login</div>
       <label>Username<input id="f_tusername" value="${t.username || ''}" autocomplete="off" /></label>
@@ -936,6 +939,7 @@ function readTechForm() {
     name: document.getElementById('f_tname').value,
     phone: document.getElementById('f_tphone').value,
     email: document.getElementById('f_temail').value,
+    hourlyRate: document.getElementById('f_thourlyrate').value,
     username: document.getElementById('f_tusername').value,
     password: document.getElementById('f_tpassword').value,
   };
@@ -963,6 +967,167 @@ window.deleteTech = async (id) => {
     alert('Could not delete technician: ' + e.message);
   }
 };
+
+// ---------- Timesheets / Payroll ----------
+// Each row is one technician's total hours + pay for one day, computed server-side
+// (lib/timesheet.js) from every clock-in/out session the tech recorded in their own
+// portal that day, plus the $10 gas stipend when it applies. Filterable by technician
+// and date range for running an actual payroll period.
+let timesheetDays = [];
+
+async function loadTimesheets() {
+  const techSelect = document.getElementById('timesheetTechFilter');
+  if (techSelect.options.length <= 1) {
+    techSelect.innerHTML = '<option value="">All technicians</option>' +
+      state.technicians.map((t) => `<option value="${t.id}">${t.name}</option>`).join('');
+  }
+
+  const params = new URLSearchParams();
+  const techId = document.getElementById('timesheetTechFilter').value;
+  const from = document.getElementById('timesheetFromFilter').value;
+  const to = document.getElementById('timesheetToFilter').value;
+  if (techId) params.set('technicianId', techId);
+  if (from) params.set('from', from);
+  if (to) params.set('to', to);
+
+  const result = await api('/api/timesheets?' + params.toString());
+  timesheetDays = result.days;
+
+  document.getElementById('timesheetStats').innerHTML = `
+    <div class="stat-card">
+      <div class="stat-label">Total hours</div>
+      <div class="stat-value">${result.totals.hours}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Gas stipends</div>
+      <div class="stat-value">${money(result.totals.gasStipend)}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Wages</div>
+      <div class="stat-value">${money(result.totals.wages)}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Total pay</div>
+      <div class="stat-value">${money(result.totals.pay)}</div>
+    </div>
+  `;
+
+  const tbody = document.querySelector('#timesheetTable tbody');
+  tbody.innerHTML = timesheetDays.map((d) => `
+    <tr>
+      <td>${d.technicianName}</td>
+      <td>${niceDateShort(d.date)}${d.stillClockedIn ? ' <span class="badge scheduled">Clocked in</span>' : ''}</td>
+      <td>${d.hours}</td>
+      <td>${money(d.gasStipend)}</td>
+      <td>${money(d.wages)}</td>
+      <td><strong>${money(d.pay)}</strong></td>
+      <td>
+        <button class="btn small" onclick="editTimesheetDay('${d.technicianId}', '${d.date}')">Edit</button>
+      </td>
+    </tr>
+  `).join('') || '<tr><td colspan="7" class="empty-state">No time entries yet.</td></tr>';
+}
+
+document.getElementById('timesheetTechFilter').addEventListener('change', loadTimesheets);
+document.getElementById('timesheetFromFilter').addEventListener('change', loadTimesheets);
+document.getElementById('timesheetToFilter').addEventListener('change', loadTimesheets);
+
+// Edits (or deletes) every clock-in/out session that made up one technician's one day
+// — a tech portal day can have more than one session (e.g. a lunch break), so this
+// lists each one with its own time fields rather than a single combined pair.
+window.editTimesheetDay = (technicianId, date) => {
+  const day = timesheetDays.find((d) => String(d.technicianId) === String(technicianId) && d.date === date);
+  if (!day) return;
+  const rowsHtml = day.entries.map((e, i) => `
+    <div id="tsEntryRow${e.id}" style="display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap; border-bottom:1px solid #eef1f2; padding-bottom:10px; margin-bottom:10px;">
+      <label style="flex:1; min-width:160px;">Clock in<input type="datetime-local" id="tsIn${e.id}" value="${toLocalInputValue(e.clockInAt)}" /></label>
+      <label style="flex:1; min-width:160px;">Clock out<input type="datetime-local" id="tsOut${e.id}" value="${e.clockOutAt ? toLocalInputValue(e.clockOutAt) : ''}" /></label>
+      <label style="display:flex; align-items:center; gap:6px; margin-bottom:8px;"><input type="checkbox" id="tsGas${e.id}" ${e.gasStipendAdded ? 'checked' : ''} /> Gas stipend</label>
+      <button class="btn small danger" onclick="deleteTimesheetEntry(${e.id}, '${technicianId}', '${date}')">Delete session</button>
+    </div>
+  `).join('');
+  openModal(`Edit hours — ${day.technicianName}, ${niceDateShort(date)}`, `
+    ${rowsHtml}
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal()">Cancel</button>
+      <button class="btn primary" id="saveTimesheetDayBtn">Save</button>
+    </div>
+  `);
+  document.getElementById('saveTimesheetDayBtn').addEventListener('click', async () => {
+    try {
+      for (const e of day.entries) {
+        const clockInAt = document.getElementById(`tsIn${e.id}`).value;
+        const clockOutAt = document.getElementById(`tsOut${e.id}`).value;
+        const gasStipendAdded = document.getElementById(`tsGas${e.id}`).checked;
+        await api(`/api/timesheets/${e.id}`, {
+          method: 'PUT',
+          body: JSON.stringify({
+            clockInAt: clockInAt ? new Date(clockInAt).toISOString() : e.clockInAt,
+            clockOutAt: clockOutAt ? new Date(clockOutAt).toISOString() : null,
+            gasStipendAdded,
+          }),
+        });
+      }
+      closeModal();
+      loadTimesheets();
+    } catch (e) {
+      alert('Could not save: ' + e.message);
+    }
+  });
+};
+
+window.deleteTimesheetEntry = async (entryId, technicianId, date) => {
+  if (!confirm('Delete this clock-in session?')) return;
+  try {
+    await api(`/api/timesheets/${entryId}`, { method: 'DELETE' });
+    closeModal();
+    loadTimesheets();
+  } catch (e) {
+    alert('Could not delete: ' + e.message);
+  }
+};
+
+document.getElementById('newTimeEntryBtn').addEventListener('click', () => {
+  openModal('Add time entry', `
+    <label>Technician<select id="ntTech">${state.technicians.map((t) => `<option value="${t.id}">${t.name}</option>`).join('')}</select></label>
+    <label>Clock in<input type="datetime-local" id="ntIn" /></label>
+    <label>Clock out <span style="font-weight:400; color:var(--text-faint);">(leave blank if still clocked in)</span><input type="datetime-local" id="ntOut" /></label>
+    <label style="display:flex; align-items:center; gap:6px;"><input type="checkbox" id="ntGas" /> Gas stipend for this day</label>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal()">Cancel</button>
+      <button class="btn primary" id="saveNewTimeEntryBtn">Save</button>
+    </div>
+  `);
+  document.getElementById('saveNewTimeEntryBtn').addEventListener('click', async () => {
+    const clockInVal = document.getElementById('ntIn').value;
+    if (!clockInVal) { alert('Pick a clock-in time.'); return; }
+    const clockOutVal = document.getElementById('ntOut').value;
+    try {
+      await api('/api/timesheets', {
+        method: 'POST',
+        body: JSON.stringify({
+          technicianId: document.getElementById('ntTech').value,
+          date: clockInVal.slice(0, 10),
+          clockInAt: new Date(clockInVal).toISOString(),
+          clockOutAt: clockOutVal ? new Date(clockOutVal).toISOString() : null,
+          gasStipendAdded: document.getElementById('ntGas').checked,
+        }),
+      });
+      closeModal();
+      loadTimesheets();
+    } catch (e) {
+      alert('Could not add entry: ' + e.message);
+    }
+  });
+});
+
+// datetime-local inputs need "YYYY-MM-DDTHH:MM" in LOCAL time, not the ISO/UTC string
+// the API stores — this converts using the browser's own timezone.
+function toLocalInputValue(isoStr) {
+  const d = new Date(isoStr);
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
 
 // ---------- Appointments / Calendar ----------
 // state.calendarMonth: first-of-month Date representing the month currently shown
