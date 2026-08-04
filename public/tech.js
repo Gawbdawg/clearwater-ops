@@ -91,6 +91,7 @@ function directionsUrl(j) {
 }
 
 function renderJobsList(jobs, opts = {}) {
+  updateTodayStrip(jobs);
   const list = document.getElementById('jobsList');
   if (jobs.length === 0) {
     list.innerHTML = '<div class="empty-state">No jobs scheduled today.</div>';
@@ -108,6 +109,7 @@ function renderJobsList(jobs, opts = {}) {
           ${j.customerNotes ? `<div class="job-meta job-property-note">Property note: ${j.customerNotes}</div>` : ''}
           ${j.notes ? `<div class="job-meta">Note: ${j.notes}</div>` : ''}
           ${renderEquipmentMeta(j.customerEquipment)}
+          ${renderChemSummary(j)}
         </div>
         <span class="badge ${j.status}">${j.status}</span>
       </div>
@@ -116,12 +118,83 @@ function renderJobsList(jobs, opts = {}) {
       <div class="job-actions">
         ${directionsUrl(j) ? `<a class="btn small" href="${directionsUrl(j)}" target="_blank" rel="noopener">Get directions</a>` : ''}
         <button class="btn small" onclick="choosePhoto(${j.id}, 'after')">Add photo</button>
+        <button class="btn small" onclick="toggleChemForm(${j.id})">${(j.chlorine || j.ph || j.alkalinity) ? 'Edit water test' : 'Log water test'}</button>
         ${j.status === 'scheduled' ? `<button class="btn small primary" onclick="markComplete(${j.id})">Mark complete</button>` : ''}
         ${j.status === 'completed' ? `<button class="btn small" onclick="markIncomplete(${j.id})">Undo — mark not complete</button>` : ''}
       </div>
+      ${chemFormHtml(j)}
     </div>
   `).join('');
 }
+
+// ---- Today status strip (deterministic, no AI needed for a plain job count) ----
+function updateTodayStrip(jobs) {
+  const el = document.getElementById('techTodayStripText');
+  if (!el) return;
+  if (jobs.length === 0) {
+    el.textContent = 'No jobs scheduled today — enjoy the day off.';
+    return;
+  }
+  const completed = jobs.filter((j) => j.status === 'completed').length;
+  const remaining = jobs.length - completed;
+  const next = jobs.find((j) => j.status === 'scheduled');
+  el.textContent = remaining === 0
+    ? `All ${jobs.length} job${jobs.length === 1 ? '' : 's'} done for today — nice work.`
+    : `${jobs.length} job${jobs.length === 1 ? '' : 's'} today, ${completed} done so far.${next ? ` Next: ${next.customerName}.` : ''}`;
+}
+
+// ---- Water test / dosage (real spa-chemistry math, not AI — see lib/chemistry.js) ----
+function renderChemSummary(j) {
+  if (!j.chlorine && !j.ph && !j.alkalinity) return '';
+  const parts = [j.chlorine && `Cl ${j.chlorine}`, j.ph && `pH ${j.ph}`, j.alkalinity && `TA ${j.alkalinity}`].filter(Boolean).join(' · ');
+  return `<div class="job-meta">Water test on file: ${parts}</div>`;
+}
+
+function chemFormHtml(j) {
+  return `
+    <div class="chem-form hidden" id="chemForm${j.id}" style="margin-top:10px; padding-top:10px; border-top:1px solid #eef1f2;">
+      <div class="calendar-form-row" style="margin-bottom:8px;">
+        <label style="flex:1; min-width:90px;">Chlorine (ppm)<input type="number" step="0.1" min="0" id="chem_cl_${j.id}" value="${j.chlorine || ''}" /></label>
+        <label style="flex:1; min-width:90px;">pH<input type="number" step="0.1" min="0" id="chem_ph_${j.id}" value="${j.ph || ''}" /></label>
+        <label style="flex:1; min-width:90px;">Alkalinity (ppm)<input type="number" step="1" min="0" id="chem_ta_${j.id}" value="${j.alkalinity || ''}" /></label>
+      </div>
+      <label>Notes <span style="font-weight:400; color:#7a8f97;">(shows up in the office's and owner's visit history)</span><textarea id="chem_notes_${j.id}" rows="2" placeholder="Anything worth flagging">${j.notes || ''}</textarea></label>
+      <div style="display:flex; gap:8px; margin-top:6px;">
+        <button class="btn primary small" onclick="saveChemistry(${j.id})">Save water test</button>
+        <button class="btn small" onclick="toggleChemForm(${j.id})">Close</button>
+      </div>
+      <div id="chemDoseResult${j.id}"></div>
+    </div>
+  `;
+}
+
+window.toggleChemForm = (id) => {
+  const el = document.getElementById('chemForm' + id);
+  if (el) el.classList.toggle('hidden');
+};
+
+window.saveChemistry = async (id) => {
+  const chlorine = document.getElementById(`chem_cl_${id}`).value;
+  const ph = document.getElementById(`chem_ph_${id}`).value;
+  const alkalinity = document.getElementById(`chem_ta_${id}`).value;
+  const notes = document.getElementById(`chem_notes_${id}`).value;
+  const doseEl = document.getElementById(`chemDoseResult${id}`);
+  try {
+    const result = await api(`/api/tech/appointments/${id}/chemistry`, {
+      method: 'PUT',
+      body: JSON.stringify({ chlorine, ph, alkalinity, notes }),
+    });
+    if (doseEl) {
+      doseEl.innerHTML = result.dosageRecommendation.length
+        ? `<div class="portal-sub" style="margin:10px 0 4px; font-weight:600;">✓ Saved — suggested dosage</div>` +
+          result.dosageRecommendation.map((r) => `<span class="dose-chip">${r.chemical}: ${r.amountOz} oz (~${r.amountTbsp} tbsp)</span>`).join('') +
+          `<div class="portal-sub" style="margin:6px 0 0;">Estimate — confirm with a fresh test after dosing.</div>`
+        : `<div class="portal-sub" style="margin:10px 0 0; color:#256b32;">✓ Saved — everything's already in range, no dosage needed.</div>`;
+    }
+  } catch (e) {
+    if (doseEl) doseEl.innerHTML = `<div class="portal-error" style="margin-top:8px;">${(e.message || 'Could not save water test')}</div>`;
+  }
+};
 
 function renderAddons(j) {
   const attached = j.addons || [];

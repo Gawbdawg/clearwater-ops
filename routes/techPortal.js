@@ -6,6 +6,7 @@ const { geocodeAddress } = require('../lib/geocode');
 const { summarizeByDay } = require('../lib/timesheet');
 const { savePhoto, deletePhoto } = require('../lib/uploads');
 const { syncInvoiceForCompletedAppointment } = require('../lib/autoInvoice');
+const chemistry = require('../lib/chemistry');
 const router = express.Router();
 
 router.use(requireTechAuth);
@@ -114,6 +115,41 @@ router.put('/appointments/:id/status', (req, res) => {
   const updated = store.update('appointments', req.params.id, { status });
   syncInvoiceForCompletedAppointment(updated);
   res.json(hideApptAddonPrices(updated));
+});
+
+// Lets a tech log a quick water test (chlorine/pH/alkalinity) plus a short note when
+// they're on site, and gets a real, deterministic dosage recommendation back in the
+// same response — plain spa-chemistry math (lib/chemistry.js), not AI, so it works
+// instantly with no dependency on an AI provider being configured. These are the same
+// chlorine/ph/alkalinity/notes fields the admin's own appointment form has always had
+// — this is just the first time a tech can write them from the field instead of an
+// admin backfilling them later, which also means the admin People view's AI visit
+// summaries and the owner portal's AI last-visit summary finally have real notes and
+// readings to draw from instead of nothing. Deliberately separate from "mark complete"
+// (below) so the fast, one-tap common case is never slowed down by this.
+router.put('/appointments/:id/chemistry', (req, res) => {
+  const appt = store.getById('appointments', req.params.id);
+  if (!appt || appt.technicianId !== req.session.technicianId) {
+    return res.status(404).json({ error: 'Appointment not found' });
+  }
+  const { chlorine, ph, alkalinity, notes } = req.body;
+  const updates = {};
+  if (chlorine !== undefined) updates.chlorine = chlorine;
+  if (ph !== undefined) updates.ph = ph;
+  if (alkalinity !== undefined) updates.alkalinity = alkalinity;
+  if (notes !== undefined) updates.notes = notes;
+  const updated = store.update('appointments', req.params.id, updates);
+
+  const customer = store.getById('customers', updated.customerId);
+  const gallons = customer && customer.equipment ? Number(customer.equipment.capacityGallons) || undefined : undefined;
+  const dosageRecommendation = chemistry.recommendDosage({
+    gallons,
+    freeChlorine: updated.chlorine !== '' ? updated.chlorine : undefined,
+    ph: updated.ph !== '' ? updated.ph : undefined,
+    alkalinity: updated.alkalinity !== '' ? updated.alkalinity : undefined,
+  });
+
+  res.json({ ...hideApptAddonPrices(updated), dosageRecommendation });
 });
 
 // Attach one upcharge/add-on to one of this technician's own jobs (e.g. tapping
