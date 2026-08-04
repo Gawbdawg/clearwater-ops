@@ -233,7 +233,7 @@ function customerForm(c = {}) {
     <label>Address (required)<input id="f_address" value="${c.address || ''}" onblur="verifyAddressField()" /></label>
     <div id="addressVerifyStatus" class="portal-sub" style="margin:-6px 0 0;">${
       c.address && c.lat != null && c.lng != null
-        ? `✓ Located: ${c.geocodedAddress || c.address}`
+        ? (c.addressManuallyPinned ? `📍 Manually placed on the map: ${c.geocodedAddress || c.address}` : `✓ Located: ${c.geocodedAddress || c.address}`)
         : ''
     }</div>
     <div id="addressMap" class="hidden" style="height:200px; border-radius:8px; margin:0 0 4px; overflow:hidden;"></div>
@@ -314,8 +314,18 @@ let lastVerifiedAddress = null; // avoids re-hitting the geocoder if the field d
 // than trying to reuse one across opens.
 let addressMapInstance = null;
 
+// Set (with { lat, lng, forAddress }) when the office manually clicks a spot on the
+// map because the geocoder couldn't find what was typed — only actually used on save
+// if the address text still matches what it was pinned for (see readCustomerForm).
+let addressManualPin = null;
+
 const OSM_TILE_URL = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
 const OSM_ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors';
+
+// Centered on this business's own service area (Lincoln City / Depoe Bay, OR coast) so
+// the manual-pin picker's first view already lands roughly in the right place when we
+// have no coordinates at all to start from yet.
+const DEFAULT_MAP_CENTER = { lat: 44.9448, lng: -124.0088 };
 
 function showAddressMap(lat, lng, label) {
   const container = document.getElementById('addressMap');
@@ -328,6 +338,30 @@ function showAddressMap(lat, lng, label) {
   addressMapInstance = L.map('addressMap').setView([lat, lng], 16);
   L.tileLayer(OSM_TILE_URL, { maxZoom: 19, attribution: OSM_ATTRIBUTION }).addTo(addressMapInstance);
   L.marker([lat, lng]).addTo(addressMapInstance).bindPopup(label || '');
+  setTimeout(() => addressMapInstance && addressMapInstance.invalidateSize(), 0);
+}
+
+// Fallback for when the text search can't find a real address (misspelling, a street
+// too new/obscure for the free geocoder, etc.) — shows a map the office can click to
+// mark the actual spot themselves instead of being stuck. Clicking again just moves
+// the pin. Same always-tear-down-and-recreate approach as showAddressMap, for the same
+// reason (the modal's DOM is fully replaced each time it opens).
+function enableAddressManualPinPicker(center, onPick) {
+  const container = document.getElementById('addressMap');
+  if (!container) return;
+  container.classList.remove('hidden');
+  if (addressMapInstance) {
+    try { addressMapInstance.remove(); } catch (e) { /* container already gone — fine */ }
+    addressMapInstance = null;
+  }
+  addressMapInstance = L.map('addressMap').setView([center.lat, center.lng], 13);
+  L.tileLayer(OSM_TILE_URL, { maxZoom: 19, attribution: OSM_ATTRIBUTION }).addTo(addressMapInstance);
+  let marker = null;
+  addressMapInstance.on('click', (e) => {
+    if (marker) marker.setLatLng(e.latlng);
+    else marker = L.marker(e.latlng).addTo(addressMapInstance);
+    onPick(e.latlng.lat, e.latlng.lng);
+  });
   setTimeout(() => addressMapInstance && addressMapInstance.invalidateSize(), 0);
 }
 
@@ -344,8 +378,9 @@ window.verifyAddressField = async () => {
   const input = document.getElementById('f_address');
   const statusEl = document.getElementById('addressVerifyStatus');
   const address = input.value.trim();
-  if (!address) { statusEl.textContent = ''; lastVerifiedAddress = null; hideAddressMap(); return; }
+  if (!address) { statusEl.textContent = ''; lastVerifiedAddress = null; addressManualPin = null; hideAddressMap(); return; }
   if (address === lastVerifiedAddress) return;
+  addressManualPin = null; // address text changed — any earlier manual pin no longer applies
   statusEl.textContent = 'Checking address…';
   try {
     const result = await api('/api/customers/verify-address', { method: 'POST', body: JSON.stringify({ address }) });
@@ -354,8 +389,11 @@ window.verifyAddressField = async () => {
       statusEl.innerHTML = `<span style="color:#256b32;">✓ Found: ${result.displayName}</span>`;
       showAddressMap(result.lat, result.lng, result.displayName);
     } else {
-      statusEl.innerHTML = `<span style="color:#a3382f;">⚠ Couldn't find this address on the map — double check for typos. An address is required, and saving will be blocked until it's found.</span>`;
-      hideAddressMap();
+      statusEl.innerHTML = `<span style="color:#a3382f;">⚠ Couldn't find this address automatically — click the map below to mark the exact spot, and we'll save that location instead.</span>`;
+      enableAddressManualPinPicker(DEFAULT_MAP_CENTER, (lat, lng) => {
+        addressManualPin = { lat, lng, forAddress: address };
+        statusEl.innerHTML = `<span style="color:#256b32;">📍 Location set manually — ready to save.</span>`;
+      });
     }
   } catch (e) {
     statusEl.textContent = '';
@@ -381,6 +419,7 @@ document.getElementById('newCustomerBtn').addEventListener('click', async () => 
   openModal('New Home', customerForm());
   addressMapInstance = null; // previous modal's map (if any) was on a DOM node that's now gone
   lastVerifiedAddress = null;
+  addressManualPin = null;
   wireOwnerSelectToggle();
   document.getElementById('saveCustomerBtn').addEventListener('click', async () => {
     try {
@@ -433,6 +472,13 @@ function readCustomerForm() {
     if (el && el.value !== '') customPricing[s.id] = el.value;
   });
   data.customPricing = customPricing;
+  // Only actually attach the manually-placed pin if the address text hasn't changed
+  // since it was set — editing the address after pinning should invalidate the old
+  // pin rather than silently attaching it to different text.
+  if (addressManualPin && addressManualPin.forAddress === data.address.trim()) {
+    data.manualLat = addressManualPin.lat;
+    data.manualLng = addressManualPin.lng;
+  }
   return data;
 }
 
@@ -441,6 +487,7 @@ window.editCustomer = async (id) => {
   const c = state.customers.find((x) => x.id === id);
   openModal('Edit Home', customerForm(c));
   addressMapInstance = null; // previous modal's map (if any) was on a DOM node that's now gone
+  addressManualPin = null;
   if (c.lat != null && c.lng != null) {
     lastVerifiedAddress = c.address || null;
     showAddressMap(c.lat, c.lng, c.geocodedAddress || c.address);

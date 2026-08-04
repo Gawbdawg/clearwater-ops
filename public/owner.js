@@ -223,8 +223,10 @@ document.getElementById('editPropertyBtn').addEventListener('click', () => {
   document.getElementById('editPropertyError').classList.add('hidden');
   // Already-located property: show its existing pin right away and don't force a
   // needless re-check unless the owner actually edits the address field.
+  manualPins.epAddress = null;
   if (p.lat != null && p.lng != null) {
-    document.getElementById('epAddressVerifyStatus').innerHTML = `<span style="color:#256b32;">✓ Located: ${p.geocodedAddress || p.address}</span>`;
+    const locatedLabel = p.addressManuallyPinned ? '📍 Manually placed on the map' : '✓ Located';
+    document.getElementById('epAddressVerifyStatus').innerHTML = `<span style="color:#256b32;">${locatedLabel}: ${p.geocodedAddress || p.address}</span>`;
     lastVerifiedPropertyAddress.epAddress = p.address || null;
     showAddressMap('epAddressMap', p.lat, p.lng, p.geocodedAddress || p.address);
   } else {
@@ -259,7 +261,11 @@ document.getElementById('saveEditPropertyBtn').addEventListener('click', async (
   const btn = document.getElementById('saveEditPropertyBtn');
   btn.disabled = true;
   try {
-    await api(`/api/owner/properties/${selectedPropertyId}`, { method: 'PUT', body: JSON.stringify({ name, address, type }) });
+    const body = { name, address, type };
+    const pin = manualPins.epAddress;
+    if (pin && pin.forAddress === address) { body.manualLat = pin.lat; body.manualLng = pin.lng; }
+    await api(`/api/owner/properties/${selectedPropertyId}`, { method: 'PUT', body: JSON.stringify(body) });
+    manualPins.epAddress = null;
     pendingSelectPropertyId = selectedPropertyId;
     await checkSession();
   } catch (e) {
@@ -1374,6 +1380,12 @@ document.getElementById('maintenanceOptOutToggle').addEventListener('change', as
 // check ran at all.
 const lastVerifiedPropertyAddress = {};
 
+// A manually-placed pin, keyed by input id ('apAddress' / 'epAddress'). Tagged with
+// forAddress so a save only actually uses it if the address text hasn't changed since
+// the pin was placed — editing the address after pinning invalidates the old pin
+// rather than silently attaching it to different text.
+const manualPins = {};
+
 // One Leaflet map instance per container, reused across checks instead of recreated
 // each time (Leaflet doesn't like being initialized twice on the same element) — just
 // re-centered and the marker moved when the address changes.
@@ -1382,11 +1394,19 @@ const propertyAddressMaps = {};
 const OSM_TILE_URL = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
 const OSM_ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors';
 
+// Used as the starting view for the manual-pin picker when we have no coordinates at
+// all to center on yet (a brand-new property, address not found) — centered on this
+// business's own service area (Lincoln City / Depoe Bay, OR coast) so the first click
+// already lands roughly in the right place instead of some random default.
+const DEFAULT_MAP_CENTER = { lat: 44.9448, lng: -124.0088 };
+
 // Shows (or updates) a small map with a pin at the given coordinates so the owner can
 // visually confirm "yes, that's my property" before saving — not just trust a text
-// match. The container starts hidden (class="hidden" in owner.html) since Leaflet
-// can't size itself correctly inside a display:none element; invalidateSize() after
-// un-hiding fixes the "gray tiles" issue that otherwise happens.
+// match. Not click-to-move; see enableManualPinPicker below for the fallback flow
+// where the owner sets the location themselves. The container starts hidden
+// (class="hidden" in owner.html) since Leaflet can't size itself correctly inside a
+// display:none element; invalidateSize() after un-hiding fixes the "gray tiles" issue
+// that otherwise happens.
 function showAddressMap(containerId, lat, lng, label) {
   const container = document.getElementById(containerId);
   if (!container) return;
@@ -1398,14 +1418,44 @@ function showAddressMap(containerId, lat, lng, label) {
     map.__marker = L.marker([lat, lng]).addTo(map);
     propertyAddressMaps[containerId] = map;
   } else {
+    map.off('click'); // in case this map was previously in manual-pin-picker mode
     map.setView([lat, lng], 16);
-    map.__marker.setLatLng([lat, lng]);
+    if (!map.__marker) map.__marker = L.marker([lat, lng]).addTo(map);
+    else map.__marker.setLatLng([lat, lng]);
   }
   if (label) map.__marker.bindPopup(label);
   setTimeout(() => map.invalidateSize(), 0);
 }
 
+// Fallback for when the text search can't find a real address (misspelling, a street
+// too new or obscure for the free geocoder to have indexed, etc.) — shows a map the
+// owner can click on to mark the actual spot themselves. onPick(lat, lng) fires on
+// every click, so clicking again just moves the pin rather than dropping a new one.
+function enableManualPinPicker(containerId, center, onPick) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  container.classList.remove('hidden');
+  let map = propertyAddressMaps[containerId];
+  if (!map) {
+    map = L.map(containerId).setView([center.lat, center.lng], 13);
+    L.tileLayer(OSM_TILE_URL, { maxZoom: 19, attribution: OSM_ATTRIBUTION }).addTo(map);
+    propertyAddressMaps[containerId] = map;
+  } else {
+    map.setView([center.lat, center.lng], 13);
+    if (map.__marker) { map.removeLayer(map.__marker); map.__marker = null; }
+  }
+  map.off('click');
+  map.on('click', (e) => {
+    if (map.__marker) map.__marker.setLatLng(e.latlng);
+    else map.__marker = L.marker(e.latlng).addTo(map);
+    onPick(e.latlng.lat, e.latlng.lng);
+  });
+  setTimeout(() => map.invalidateSize(), 0);
+}
+
 function hideAddressMap(containerId) {
+  const map = propertyAddressMaps[containerId];
+  if (map) map.off('click');
   const container = document.getElementById(containerId);
   if (container) container.classList.add('hidden');
 }
@@ -1418,10 +1468,12 @@ async function checkPropertyAddressField(inputId, statusId) {
   if (!address) {
     statusEl.textContent = '';
     lastVerifiedPropertyAddress[inputId] = null;
+    manualPins[inputId] = null;
     hideAddressMap(mapId);
     return;
   }
   if (address === lastVerifiedPropertyAddress[inputId]) return;
+  manualPins[inputId] = null; // address text changed — any earlier manual pin no longer applies
   statusEl.textContent = 'Checking address…';
   try {
     const result = await api('/api/owner/verify-address', { method: 'POST', body: JSON.stringify({ address }) });
@@ -1430,8 +1482,11 @@ async function checkPropertyAddressField(inputId, statusId) {
       statusEl.innerHTML = `<span style="color:#256b32;">✓ Found: ${result.displayName}</span>`;
       showAddressMap(mapId, result.lat, result.lng, result.displayName);
     } else {
-      statusEl.innerHTML = `<span style="color:#a3382f;">⚠ Couldn't find this address on the map — double check for typos. An address is required, and saving will be blocked until it's found.</span>`;
-      hideAddressMap(mapId);
+      statusEl.innerHTML = `<span style="color:#a3382f;">⚠ Couldn't find this address automatically — click the map below to mark the exact spot, and we'll save that location instead.</span>`;
+      enableManualPinPicker(mapId, DEFAULT_MAP_CENTER, (lat, lng) => {
+        manualPins[inputId] = { lat, lng, forAddress: address };
+        statusEl.innerHTML = `<span style="color:#256b32;">📍 Location set manually — ready to save.</span>`;
+      });
     }
   } catch (e) {
     statusEl.textContent = '';
@@ -1448,6 +1503,7 @@ document.getElementById('showAddPropertyBtn').addEventListener('click', () => {
   document.getElementById('addPropertyForm').classList.remove('hidden');
   document.getElementById('apAddressVerifyStatus').textContent = '';
   lastVerifiedPropertyAddress.apAddress = null;
+  manualPins.apAddress = null;
   hideAddressMap('apAddressMap');
 });
 
@@ -1476,10 +1532,14 @@ document.getElementById('saveNewPropertyBtn').addEventListener('click', async ()
   const btn = document.getElementById('saveNewPropertyBtn');
   btn.disabled = true;
   try {
-    const created = await api('/api/owner/properties', { method: 'POST', body: JSON.stringify({ name, address, type }) });
+    const body = { name, address, type };
+    const pin = manualPins.apAddress;
+    if (pin && pin.forAddress === address) { body.manualLat = pin.lat; body.manualLng = pin.lng; }
+    const created = await api('/api/owner/properties', { method: 'POST', body: JSON.stringify(body) });
     document.getElementById('apName').value = '';
     document.getElementById('apAddress').value = '';
     document.getElementById('apType').value = 'residential';
+    manualPins.apAddress = null;
     hideAddressMap('apAddressMap');
     // Select the property just created (rather than always defaulting to properties[0])
     // so a newly-added vacation property's Booking calendar tab — and the iCal field on

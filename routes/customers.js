@@ -141,13 +141,35 @@ router.post('/verify-address', async (req, res) => {
 // check for a blank address before ever calling this. Throws on failure; callers turn
 // that into a 400 rather than swallowing it. Sets the same
 // lat/lng/geocodedAddress/addressVerified fields onto `updates` on success that the
-// rest of the app already expects.
+// rest of the app already expects. Explicitly clears addressManuallyPinned (see
+// below) since a successful automatic geocode supersedes any earlier manual pin.
 async function geocodeOrThrow(address, updates) {
   const { lat, lng, displayName } = await geocodeAddress(address);
   updates.lat = lat;
   updates.lng = lng;
   updates.geocodedAddress = displayName;
   updates.addressVerified = true;
+  updates.addressManuallyPinned = false;
+}
+
+// Nominatim (the free geocoder) is picky about exact spelling and doesn't have every
+// real address indexed — a brand-new street, an unofficial/locally-known spelling, or
+// a rural address can all be completely real and still come back "not found." Rather
+// than leaving someone stuck unable to save a real home, the frontend's map lets them
+// click the correct spot themselves when automatic search fails; that click sends
+// manualLat/manualLng here instead of the geocoder ever running. Trusted as-is (no
+// server-side verification of a human-placed pin) and flagged with
+// addressManuallyPinned so it's visibly distinguishable later from a
+// geocoder-confirmed address.
+function isValidManualPin(manualLat, manualLng) {
+  return manualLat != null && manualLng != null && !Number.isNaN(Number(manualLat)) && !Number.isNaN(Number(manualLng));
+}
+function applyManualPin(address, manualLat, manualLng, updates) {
+  updates.lat = Number(manualLat);
+  updates.lng = Number(manualLng);
+  updates.geocodedAddress = address.trim();
+  updates.addressVerified = true;
+  updates.addressManuallyPinned = true;
 }
 
 // Cleans a raw { [serviceId]: price } object the same way routes/owners.js does for
@@ -166,7 +188,7 @@ function cleanCustomPricing(raw) {
 router.post('/', async (req, res) => {
   const {
     name, email, phone, address, notes, type, icalUrl, ownerId, newOwner, equipment,
-    serviceFrequency, customFrequencyDays, customPricing,
+    serviceFrequency, customFrequencyDays, customPricing, manualLat, manualLng,
   } = req.body;
   if (!name) return res.status(400).json({ error: 'Name is required' });
   if (!address || !address.trim()) {
@@ -183,10 +205,14 @@ router.post('/', async (req, res) => {
   }
 
   const geo = {};
-  try {
-    await geocodeOrThrow(address, geo);
-  } catch (err) {
-    return res.status(400).json({ error: `Couldn't find that address on the map (${err.message}) — double check it for typos and try again.` });
+  if (isValidManualPin(manualLat, manualLng)) {
+    applyManualPin(address, manualLat, manualLng, geo);
+  } else {
+    try {
+      await geocodeOrThrow(address, geo);
+    } catch (err) {
+      return res.status(400).json({ error: `Couldn't find that address on the map (${err.message}) — double check it for typos and try again, or click the map to set the location manually.` });
+    }
   }
 
   const customer = store.create('customers', {
@@ -213,7 +239,11 @@ router.post('/', async (req, res) => {
 router.put('/:id', async (req, res) => {
   const updates = { ...req.body };
   const newOwner = updates.newOwner;
+  const manualLat = updates.manualLat;
+  const manualLng = updates.manualLng;
   delete updates.newOwner;
+  delete updates.manualLat;
+  delete updates.manualLng;
 
   if (newOwner && newOwner.username) {
     try {
@@ -246,10 +276,14 @@ router.put('/:id', async (req, res) => {
       return res.status(400).json({ error: 'An address is required — every home needs a located address on file so a tech can actually be routed there.' });
     }
     if (!existing || updates.address !== existing.address) {
-      try {
-        await geocodeOrThrow(updates.address, updates);
-      } catch (err) {
-        return res.status(400).json({ error: `Couldn't find that address on the map (${err.message}) — double check it for typos and try again.` });
+      if (isValidManualPin(manualLat, manualLng)) {
+        applyManualPin(updates.address, manualLat, manualLng, updates);
+      } else {
+        try {
+          await geocodeOrThrow(updates.address, updates);
+        } catch (err) {
+          return res.status(400).json({ error: `Couldn't find that address on the map (${err.message}) — double check it for typos and try again, or click the map to set the location manually.` });
+        }
       }
     }
   }

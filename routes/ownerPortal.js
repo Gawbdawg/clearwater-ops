@@ -86,25 +86,48 @@ router.post('/verify-address', async (req, res) => {
   }
 });
 
+// Nominatim (the free geocoder) doesn't have every real address indexed — a new
+// street, an unofficial local spelling, or a rural address can be completely real
+// and still not match. Rather than leaving an owner stuck, the portal's map lets them
+// click the correct spot themselves when the automatic search fails; that sends
+// manualLat/manualLng here instead. Trusted as-is and flagged with
+// addressManuallyPinned so it stays distinguishable later from a geocoder-confirmed
+// address (same helper the admin's routes/customers.js uses).
+function isValidManualPin(manualLat, manualLng) {
+  return manualLat != null && manualLng != null && !Number.isNaN(Number(manualLat)) && !Number.isNaN(Number(manualLng));
+}
+function applyManualPin(address, manualLat, manualLng, updates) {
+  updates.lat = Number(manualLat);
+  updates.lng = Number(manualLng);
+  updates.geocodedAddress = address.trim();
+  updates.addressVerified = true;
+  updates.addressManuallyPinned = true;
+}
+
 // Lets an owner add their own property from the portal (e.g. on first login, or
 // adding a second hot tub later) instead of waiting on the admin to create it —
 // always attached to their own account; there's no way to pass a different ownerId
 // here. An address is required and geocoded right away, same as the admin's Homes
-// tab — a blank address, or one the map can't locate, is never saved; the property
-// only gets created once we have coordinates a tech can actually be routed to.
+// tab — a blank address, or one the map can't locate (and isn't manually pinned
+// instead — see above), is never saved; the property only gets created once we have
+// coordinates a tech can actually be routed to.
 router.post('/properties', async (req, res) => {
-  const { name, address, type } = req.body;
+  const { name, address, type, manualLat, manualLng } = req.body;
   if (!name || !name.trim()) return res.status(400).json({ error: 'A property name is required' });
   if (!address || !address.trim()) {
     return res.status(400).json({ error: 'An address is required so we can find your property on the map.' });
   }
 
   const geo = {};
-  try {
-    const { lat, lng, displayName } = await geocodeAddress(address);
-    Object.assign(geo, { lat, lng, geocodedAddress: displayName, addressVerified: true });
-  } catch (err) {
-    return res.status(400).json({ error: `Couldn't find that address on the map (${err.message}) — double check it for typos and try again.` });
+  if (isValidManualPin(manualLat, manualLng)) {
+    applyManualPin(address, manualLat, manualLng, geo);
+  } else {
+    try {
+      const { lat, lng, displayName } = await geocodeAddress(address);
+      Object.assign(geo, { lat, lng, geocodedAddress: displayName, addressVerified: true, addressManuallyPinned: false });
+    } catch (err) {
+      return res.status(400).json({ error: `Couldn't find that address on the map (${err.message}) — double check it for typos and try again, or click the map to set the location manually.` });
+    }
   }
 
   const property = store.create('customers', {
@@ -139,7 +162,7 @@ router.post('/properties', async (req, res) => {
 router.put('/properties/:id', async (req, res) => {
   const property = myProperty(req, req.params.id);
   if (!property) return res.status(404).json({ error: 'Property not found' });
-  const { name, address, type } = req.body;
+  const { name, address, type, manualLat, manualLng } = req.body;
   if (!name || !name.trim()) return res.status(400).json({ error: 'A property name is required' });
   if (!address || !address.trim()) {
     return res.status(400).json({ error: 'An address is required so we can find your property on the map.' });
@@ -152,11 +175,15 @@ router.put('/properties/:id', async (req, res) => {
   };
 
   if (updates.address !== (property.address || '')) {
-    try {
-      const { lat, lng, displayName } = await geocodeAddress(updates.address);
-      Object.assign(updates, { lat, lng, geocodedAddress: displayName, addressVerified: true });
-    } catch (err) {
-      return res.status(400).json({ error: `Couldn't find that address on the map (${err.message}) — double check it for typos and try again.` });
+    if (isValidManualPin(manualLat, manualLng)) {
+      applyManualPin(updates.address, manualLat, manualLng, updates);
+    } else {
+      try {
+        const { lat, lng, displayName } = await geocodeAddress(updates.address);
+        Object.assign(updates, { lat, lng, geocodedAddress: displayName, addressVerified: true, addressManuallyPinned: false });
+      } catch (err) {
+        return res.status(400).json({ error: `Couldn't find that address on the map (${err.message}) — double check it for typos and try again, or click the map to set the location manually.` });
+      }
     }
   }
 
