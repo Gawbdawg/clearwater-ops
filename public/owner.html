@@ -24,32 +24,36 @@
         <h1>Customer login</h1>
         <div id="loginError" class="portal-error hidden"></div>
 
-        <!-- Email + code (default) -->
-        <div id="codeLoginStep1">
+        <!-- Email + code (default). Real <form>s (not just divs) below are what let
+             Chrome/Safari/Firefox actually offer to save these and autofill them next
+             time — browsers key their "remember this" heuristics off a form submit
+             event, not arbitrary button clicks. See the matching submit listeners in
+             owner.js (they replaced the old click listeners for the same reason). -->
+        <form id="codeLoginStep1">
           <p class="portal-sub" style="margin:0 0 8px;">Enter your email and we'll send you a one-time code — no password needed.</p>
           <label>Email<input type="email" id="codeEmail" autocomplete="email" /></label>
-          <button class="btn primary" id="sendCodeBtn">Send me a code</button>
-        </div>
-        <div id="codeLoginStep2" class="hidden">
+          <button class="btn primary" type="submit" id="sendCodeBtn">Send me a code</button>
+        </form>
+        <form id="codeLoginStep2" class="hidden">
           <p class="portal-sub" id="codeSentTo" style="margin:0 0 8px;"></p>
           <label>6-digit code<input type="text" id="codeInput" inputmode="numeric" maxlength="6" autocomplete="one-time-code" /></label>
-          <button class="btn primary" id="verifyCodeBtn">Log in</button>
-          <button class="btn small" id="resendCodeBtn" style="margin-top:6px;">Send a new code</button>
-        </div>
+          <button class="btn primary" type="submit" id="verifyCodeBtn">Log in</button>
+          <button class="btn small" type="button" id="resendCodeBtn" style="margin-top:6px;">Send a new code</button>
+        </form>
 
         <div style="border-top:1px solid #eef1f2; margin-top:16px; padding-top:12px;">
-          <button class="btn small" id="togglePasswordLoginBtn">Use username &amp; password instead</button>
+          <button class="btn small" type="button" id="togglePasswordLoginBtn">Use username &amp; password instead</button>
         </div>
 
         <!-- Username + password (fallback for older accounts) -->
-        <div id="passwordLoginFields" class="hidden" style="margin-top:12px;">
+        <form id="passwordLoginFields" class="hidden" style="margin-top:12px;">
           <label>Username<input type="text" id="loginUsername" autocomplete="username" /></label>
           <label>Password<input type="password" id="loginPassword" autocomplete="current-password" /></label>
-          <button class="btn primary" id="loginBtn">Log in</button>
-        </div>
+          <button class="btn primary" type="submit" id="loginBtn">Log in</button>
+        </form>
 
         <div style="border-top:1px solid #eef1f2; margin-top:16px; padding-top:12px;">
-          <button class="btn small" id="showSignupBtn">New here? Create an account</button>
+          <button class="btn small" type="button" id="showSignupBtn">New here? Create an account</button>
         </div>
       </section>
 
@@ -58,13 +62,15 @@
       <section id="signupView" class="portal-card hidden">
         <h1>Create your account</h1>
         <div id="signupError" class="portal-error hidden"></div>
-        <label>Name<input type="text" id="signupName" autocomplete="name" /></label>
-        <label>Email<input type="email" id="signupEmail" autocomplete="email" /></label>
-        <label>Phone <span style="font-weight:400; color:#7a8f97;">(optional)</span><input type="tel" id="signupPhone" autocomplete="tel" /></label>
-        <label>Username <span style="font-weight:400; color:#7a8f97;">(optional — you can always log in with your email + a code instead)</span><input type="text" id="signupUsername" autocomplete="username" /></label>
-        <label>Password<input type="password" id="signupPassword" autocomplete="new-password" /></label>
-        <button class="btn primary" id="createAccountBtn">Create account</button>
-        <button class="btn small" id="backToLoginBtn" style="margin-top:6px;">Back to log in</button>
+        <form id="signupForm">
+          <label>Name<input type="text" id="signupName" autocomplete="name" /></label>
+          <label>Email<input type="email" id="signupEmail" autocomplete="email" /></label>
+          <label>Phone <span style="font-weight:400; color:#7a8f97;">(optional)</span><input type="tel" id="signupPhone" autocomplete="tel" /></label>
+          <label>Username <span style="font-weight:400; color:#7a8f97;">(optional — you can always log in with your email + a code instead)</span><input type="text" id="signupUsername" autocomplete="username" /></label>
+          <label>Password<input type="password" id="signupPassword" autocomplete="new-password" /></label>
+          <button class="btn primary" type="submit" id="createAccountBtn">Create account</button>
+        </form>
+        <button class="btn small" type="button" id="backToLoginBtn" style="margin-top:6px;">Back to log in</button>
       </section>
 
       <!-- Terms of Service gate — shown once, the first time an owner logs in, before

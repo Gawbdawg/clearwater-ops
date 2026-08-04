@@ -1148,7 +1148,10 @@ document.getElementById('svcCalTodayBtn').addEventListener('click', () => {
   renderOwnerCalendarGrid();
 });
 
-document.getElementById('loginBtn').addEventListener('click', async () => {
+// A real form submit (rather than a plain button click) is what makes the browser's
+// password manager offer to save these credentials and autofill them next visit.
+document.getElementById('passwordLoginFields').addEventListener('submit', async (e) => {
+  e.preventDefault();
   loginError.classList.add('hidden');
   const username = document.getElementById('loginUsername').value;
   const password = document.getElementById('loginPassword').value;
@@ -1158,10 +1161,6 @@ document.getElementById('loginBtn').addEventListener('click', async () => {
   } catch (e) {
     showError(e.message);
   }
-});
-
-document.getElementById('loginPassword').addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') document.getElementById('loginBtn').click();
 });
 
 document.getElementById('togglePasswordLoginBtn').addEventListener('click', () => {
@@ -1199,9 +1198,9 @@ async function sendLoginCode() {
   }
 }
 
-document.getElementById('sendCodeBtn').addEventListener('click', sendLoginCode);
-document.getElementById('codeEmail').addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') sendLoginCode();
+document.getElementById('codeLoginStep1').addEventListener('submit', (e) => {
+  e.preventDefault();
+  sendLoginCode();
 });
 
 document.getElementById('resendCodeBtn').addEventListener('click', async () => {
@@ -1226,9 +1225,9 @@ async function verifyLoginCode() {
   }
 }
 
-document.getElementById('verifyCodeBtn').addEventListener('click', verifyLoginCode);
-document.getElementById('codeInput').addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') verifyLoginCode();
+document.getElementById('codeLoginStep2').addEventListener('submit', (e) => {
+  e.preventDefault();
+  verifyLoginCode();
 });
 
 logoutBtn.addEventListener('click', async () => {
@@ -1250,7 +1249,8 @@ document.getElementById('backToLoginBtn').addEventListener('click', () => {
   loginView.classList.remove('hidden');
 });
 
-document.getElementById('createAccountBtn').addEventListener('click', async () => {
+document.getElementById('signupForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
   const errEl = document.getElementById('signupError');
   errEl.classList.add('hidden');
   const name = document.getElementById('signupName').value.trim();

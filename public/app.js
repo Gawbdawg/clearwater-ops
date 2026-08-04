@@ -3305,7 +3305,8 @@ async function checkAdminSession() {
   }
 }
 
-document.getElementById('adminSetupBtn').addEventListener('click', async () => {
+document.getElementById('adminSetupForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
   const errEl = document.getElementById('adminSetupError');
   errEl.classList.add('hidden');
   const name = document.getElementById('adminSetupName').value;
@@ -3320,7 +3321,10 @@ document.getElementById('adminSetupBtn').addEventListener('click', async () => {
   }
 });
 
-document.getElementById('adminLoginBtn').addEventListener('click', async () => {
+// A real form submit (rather than a plain button click) is what makes the browser's
+// password manager offer to save these credentials and autofill them next visit.
+document.getElementById('adminLoginForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
   const errEl = document.getElementById('adminLoginError');
   errEl.classList.add('hidden');
   const username = document.getElementById('adminLoginUsername').value;
@@ -3332,10 +3336,6 @@ document.getElementById('adminLoginBtn').addEventListener('click', async () => {
     errEl.textContent = e.message;
     errEl.classList.remove('hidden');
   }
-});
-
-document.getElementById('adminLoginPassword').addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') document.getElementById('adminLoginBtn').click();
 });
 
 document.getElementById('adminLogoutBtn').addEventListener('click', async () => {
