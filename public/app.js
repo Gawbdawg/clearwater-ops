@@ -1386,7 +1386,8 @@ function renderInvoiceTable() {
         ${bundled
           ? `<button class="btn small" onclick="viewInvoiceLineItems(${i.bundledIntoInvoiceId})">View combined invoice</button>`
           : `
-            ${i.status !== 'paid' ? `<button class="btn small" onclick="copyPayLink(${i.id})">Copy pay link</button>` : ''}
+            <button class="btn small" onclick="viewInvoice(${i.id})">View invoice</button>
+            <button class="btn small" onclick="emailInvoice(${i.id})">Email invoice</button>
             ${i.isCombined
               ? `<button class="btn small" onclick="viewInvoiceLineItems(${i.id})">View jobs</button>
                  <button class="btn small" onclick="editCombinedInvoice(${i.id})">Edit</button>`
@@ -1447,15 +1448,25 @@ window.editCombinedInvoice = (id) => {
   });
 };
 
-window.copyPayLink = (id) => {
-  const url = `${window.location.origin}/pay/${id}`;
-  if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(url).then(
-      () => alert('Payment link copied to clipboard:\n' + url),
-      () => prompt('Copy this payment link:', url)
-    );
-  } else {
-    prompt('Copy this payment link:', url);
+// Opens the same public, no-login invoice page a customer/owner would see from a pay
+// link — the invoice's amount, due date, and (if Stripe is configured) a way to pay it.
+window.viewInvoice = (id) => {
+  window.open(`${window.location.origin}/pay/${id}`, '_blank');
+};
+
+// Emails the invoice straight to whoever's billed for it — the owner's email if the
+// home has one linked, otherwise the home's own email — with a short thank-you note
+// and a link to view/pay it online. Replaces the old copy-the-link-and-text-it-
+// yourself workflow entirely.
+window.emailInvoice = async (id) => {
+  try {
+    const result = await api(`/api/invoices/${id}/email`, { method: 'POST' });
+    alert(result.dryRun
+      ? `Email logged (no email provider configured yet — see Settings/README). Would have gone to ${result.to}.`
+      : `Invoice emailed to ${result.to}.`);
+    await loadInvoices();
+  } catch (e) {
+    alert('Could not email this invoice: ' + e.message);
   }
 };
 
