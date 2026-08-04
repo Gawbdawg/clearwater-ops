@@ -22,6 +22,8 @@ const timesheetsRouter = require('./routes/timesheets');
 const newsletterRouter = require('./routes/newsletter');
 const exportRouter = require('./routes/export');
 const adminAuthRouter = require('./routes/adminAuth');
+const todayRouter = require('./routes/today');
+const peopleRouter = require('./routes/people');
 const payRouter = require('./routes/pay');
 const stripeWebhookHandler = require('./routes/stripeWebhook');
 const { requireAdminAuth } = require('./lib/auth');
@@ -81,6 +83,8 @@ app.use('/api/addons', requireAdminAuth, addonsRouter);
 app.use('/api/timesheets', requireAdminAuth, timesheetsRouter);
 app.use('/api/export', requireAdminAuth, exportRouter);
 app.use('/api/newsletter', requireAdminAuth, newsletterRouter);
+app.use('/api/today', requireAdminAuth, todayRouter);
+app.use('/api/people', requireAdminAuth, peopleRouter);
 
 // Technician portal
 app.use('/api/tech-auth', techAuthRouter);

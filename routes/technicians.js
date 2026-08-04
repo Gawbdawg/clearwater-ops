@@ -1,6 +1,8 @@
 const express = require('express');
 const store = require('../lib/store');
 const { hashPassword, sanitizeTechnician } = require('../lib/auth');
+const { summarizeByDay } = require('../lib/timesheet');
+const ai = require('../lib/ai');
 const router = express.Router();
 
 // Attaches this technician's own upcoming self-blocked days (see routes/techPortal.js
@@ -17,6 +19,46 @@ function withUpcomingTimeOff(tech) {
 
 router.get('/', (req, res) => {
   res.json(store.getAll('technicians').map(withUpcomingTimeOff));
+});
+
+// Powers the Team surface: one card per technician (jobs completed + hours + pay over
+// the last 7 days, and whether they're currently clocked in) plus an AI/template weekly
+// pulse sentence up top. Registered before the /:id routes below but never collides —
+// there's no GET /:id here, only PUT/DELETE, so this static path is unambiguous.
+router.get('/pulse', async (req, res) => {
+  const today = new Date().toISOString().slice(0, 10);
+  const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
+  const technicians = store.getAll('technicians');
+  const appointments = store.getAll('appointments');
+  const timeEntries = store.getAll('timeEntries').filter((e) => e.date >= weekAgo && e.date <= today);
+
+  const days = summarizeByDay(timeEntries, (id) => technicians.find((t) => t.id === id));
+
+  const cards = technicians.map((t) => {
+    const completedThisWeek = appointments.filter(
+      (a) => a.technicianId === t.id && a.status === 'completed' && a.date >= weekAgo && a.date <= today
+    ).length;
+    const todaysEntries = store.getAll('timeEntries').filter((e) => e.technicianId === t.id && e.date === today);
+    const clockedIn = todaysEntries.some((e) => e.clockInAt && !e.clockOutAt);
+    const techDays = days.filter((d) => d.technicianId === t.id);
+    const hours = Math.round(techDays.reduce((sum, d) => sum + d.hours, 0) * 100) / 100;
+    const pay = Math.round(techDays.reduce((sum, d) => sum + d.pay, 0) * 100) / 100;
+    return {
+      technicianId: t.id,
+      name: t.name,
+      hourlyRate: t.hourlyRate || 0,
+      jobsThisWeek: completedThisWeek,
+      hoursThisWeek: hours,
+      payThisWeek: pay,
+      clockedIn,
+    };
+  });
+
+  const pulse = await ai.generateTeamPulse({
+    techStats: cards.map((c) => ({ name: c.name, jobs: c.jobsThisWeek, hours: c.hoursThisWeek })),
+  });
+
+  res.json({ cards, pulse });
 });
 
 router.post('/', (req, res) => {

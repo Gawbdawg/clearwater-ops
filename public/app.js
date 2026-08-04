@@ -18,24 +18,34 @@ async function api(path, opts = {}) {
 }
 
 // ---------- Tabs ----------
-document.getElementById('tabs').addEventListener('click', (e) => {
-  const btn = e.target.closest('.tab-btn');
+// One shared toggle mechanism for every panel in the app — the 5 new top-level
+// surfaces' own default views (today/peopledir/moneyqueue/teampulse) AND every
+// original tab this redesign kept reachable as a "power view" (customers/owners/
+// invoices/reports/technicians/timesheets/settings/newsletter/agreements/etc.) are
+// all plain .tab-panel elements, switched by clicking any .tab-btn[data-tab] anywhere
+// in the page — inner pill navs inside a surface, or JS calling activateTab() directly.
+function activateTab(tab) {
+  document.querySelectorAll('.tab-btn').forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
+  document.querySelectorAll('.tab-panel').forEach((p) => p.classList.toggle('active', p.id === 'tab-' + tab));
+  loadTab(tab);
+}
+document.body.addEventListener('click', (e) => {
+  const btn = e.target.closest('.tab-btn[data-tab]');
   if (!btn) return;
-  document.querySelectorAll('.tab-btn').forEach((b) => b.classList.remove('active'));
-  document.querySelectorAll('.tab-panel').forEach((p) => p.classList.remove('active'));
-  btn.classList.add('active');
-  document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
-  loadTab(btn.dataset.tab);
+  activateTab(btn.dataset.tab);
 });
 
 function loadTab(tab) {
-  if (tab === 'dashboard') loadDashboard();
+  if (tab === 'dashboard') loadTodaySurface();
   if (tab === 'calendar') loadAppointments();
   if (tab === 'customers') loadCustomers();
   if (tab === 'owners') loadOwners();
+  if (tab === 'peopledir') loadPeopleDirectory();
   if (tab === 'technicians') loadTechnicians();
   if (tab === 'timesheets') loadTimesheets();
+  if (tab === 'teampulse') loadTeamPulseSurface();
   if (tab === 'invoices') loadInvoices();
+  if (tab === 'moneyqueue') loadMoneyQueue();
   if (tab === 'schedule') loadSchedule();
   if (tab === 'propertycal') loadBookings();
   if (tab === 'requests') loadRequests();
@@ -44,6 +54,43 @@ function loadTab(tab) {
   if (tab === 'newsletter') loadNewsletterTab();
   if (tab === 'agreements') loadAgreements();
 }
+
+// ---------- Surface nav (Today / Schedule / People / Money / Team) ----------
+const SURFACE_DEFAULT_TAB = { today: 'dashboard', schedule: 'calendar', people: 'peopledir', money: 'moneyqueue', team: 'teampulse' };
+function switchSurface(name) {
+  document.querySelectorAll('.surface-btn').forEach((b) => b.classList.toggle('active', b.dataset.surface === name));
+  document.querySelectorAll('.surface').forEach((s) => s.classList.toggle('active', s.id === 'surface-' + name));
+  activateTab(SURFACE_DEFAULT_TAB[name]);
+}
+document.getElementById('surfaceNav').addEventListener('click', (e) => {
+  const btn = e.target.closest('.surface-btn');
+  if (!btn) return;
+  switchSurface(btn.dataset.surface);
+});
+
+// ---------- Settings slide-over (Settings / Newsletter / Agreements) ----------
+const settingsDrawerOverlay = document.getElementById('settingsDrawerOverlay');
+document.getElementById('settingsDrawerBtn').addEventListener('click', () => {
+  settingsDrawerOverlay.classList.remove('hidden');
+  activateTab('settings');
+});
+document.getElementById('settingsDrawerClose').addEventListener('click', () => settingsDrawerOverlay.classList.add('hidden'));
+settingsDrawerOverlay.addEventListener('click', (e) => {
+  if (e.target === settingsDrawerOverlay) settingsDrawerOverlay.classList.add('hidden');
+});
+
+// ---------- Dark mode ----------
+function applyTheme(theme) {
+  document.documentElement.setAttribute('data-theme', theme);
+  const label = document.getElementById('darkModeToggleLabel');
+  if (label) label.textContent = theme === 'dark' ? 'Light mode' : 'Dark mode';
+}
+applyTheme(localStorage.getItem('cw-theme') || 'light');
+document.getElementById('darkModeToggle').addEventListener('click', () => {
+  const next = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('cw-theme', next);
+  applyTheme(next);
+});
 
 // Portal links shown as hints on the Technicians/Customers/Owners tabs
 document.getElementById('techPortalLink').textContent = window.location.origin + '/tech';
@@ -80,48 +127,331 @@ document.getElementById('copyTextBtn').addEventListener('click', () => {
   document.execCommand('copy');
 });
 
-// ---------- Dashboard ----------
-// Small always-visible notice for new owner self-signups in the last 7 days — shows up
-// on the Dashboard every time the admin opens the app, regardless of whether a
-// notification email is configured (see Settings → New account notifications).
-async function loadNewSignupsNotice() {
-  const el = document.getElementById('newSignupsNotice');
-  if (!el) return;
-  const owners = await api('/api/owners');
-  state.owners = owners;
-  const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
-  const recent = owners.filter((o) => o.signupSource === 'self' && o.createdAt && new Date(o.createdAt).getTime() >= cutoff);
-  if (recent.length === 0) {
-    el.classList.add('hidden');
+// ---------- Today surface ----------
+// Everything office staff need at a glance: a Ripple (AI)-authored briefing, who's
+// clocked in and how their day's going, and a flat, priority-sorted list of things
+// that need a human decision — overdue jobs, unpaid invoices, filter-change alerts,
+// new owner sign-ups, pending service requests. All from one call to /api/today (see
+// routes/today.js) instead of the old Dashboard's single "today's appointments" list.
+let todayAttentionById = {};
+
+async function loadTodaySurface() {
+  document.getElementById('todayDate').textContent = todayStr();
+  // Warm the shared state caches in the background so "View home"/"View owner"
+  // actions triggered from an attention card never hit an empty state array.
+  loadCustomers();
+  loadOwners();
+
+  let data;
+  try {
+    data = await api('/api/today');
+  } catch (e) {
+    document.getElementById('todayBriefingText').textContent = 'Could not load today\'s briefing: ' + e.message;
     return;
   }
-  el.classList.remove('hidden');
-  el.innerHTML = `
-    <strong>${recent.length} new owner sign-up${recent.length === 1 ? '' : 's'}</strong> in the last 7 days:
-    ${recent.map((o) => o.name).join(', ')}
-    — <a href="#" onclick="document.querySelector('[data-tab=owners]').click(); return false;">view in Owners</a>
+
+  document.getElementById('todayBriefingText').textContent = data.briefing.text;
+
+  const teamStrip = document.getElementById('todayTeamStrip');
+  teamStrip.innerHTML = data.teamStatus.length
+    ? data.teamStatus.map((t) => `
+        <div class="team-chip ${t.clockedIn ? 'clocked-in' : ''}">
+          <span class="dot"></span>
+          <span class="name">${t.name}</span>
+          <span class="meta">${t.jobsCompletedToday}/${t.jobsToday} jobs today${t.clockedIn ? ' · clocked in' : ''}</span>
+        </div>
+      `).join('')
+    : '';
+
+  todayAttentionById = {};
+  data.attention.forEach((c) => { todayAttentionById[c.id] = c; });
+  const attnEl = document.getElementById('todayAttention');
+  attnEl.innerHTML = data.attention.length
+    ? data.attention.map(renderAttentionCard).join('')
+    : '<div class="attention-empty">Nothing needs attention right now — nice work.</div>';
+}
+
+function renderAttentionCard(card) {
+  return `
+    <div class="attention-card" data-kind="${card.kind}" id="attn-${card.id}">
+      <div>
+        <div class="attn-title">${card.title}</div>
+        <div class="attn-subtitle">${card.subtitle}</div>
+      </div>
+      <button class="btn small primary" onclick="resolveAttentionCard('${card.id}')">${card.actionLabel}</button>
+    </div>
   `;
 }
 
-async function loadDashboard() {
-  document.getElementById('todayDate').textContent = todayStr();
-  const [appts] = await Promise.all([api('/api/appointments?date=' + todayStr())]);
-  loadNewSignupsNotice();
-  const list = document.getElementById('todayList');
-  if (appts.length === 0) {
-    list.innerHTML = '<div class="empty-state">No appointments scheduled for today.</div>';
+// Handles every attention-card action from one place, branching on `kind`. The two
+// "resolvable" kinds (an overdue job, an overdue invoice) perform the real action via
+// the SAME endpoints the old tabs already used, then fade the card out and reload;
+// the rest just navigate to where the full picture lives, since there's nothing to
+// "complete" about a filter reminder or a new sign-up.
+window.resolveAttentionCard = async (id) => {
+  const card = todayAttentionById[id];
+  if (!card) return;
+  try {
+    if (card.kind === 'overdue_job') {
+      await api(`/api/appointments/${card.appointmentId}`, { method: 'PUT', body: JSON.stringify({ status: 'completed' }) });
+    } else if (card.kind === 'unpaid_invoice') {
+      const r = await api(`/api/invoices/${card.invoiceId}/send-nudge`, { method: 'POST' });
+      alert((r.aiGenerated ? 'AI-drafted reminder sent' : 'Reminder sent') + ' to ' + r.to + '.' + (r.dryRun ? ' (dry run — email not configured)' : ''));
+    } else if (card.kind === 'filter_due') {
+      viewCustomerProfile(card.customerId);
+      return;
+    } else if (card.kind === 'new_signup') {
+      openPersonDetail('owner', card.ownerId);
+      return;
+    } else if (card.kind === 'service_request') {
+      switchSurface('schedule');
+      activateTab('requests');
+      return;
+    }
+  } catch (e) {
+    alert('Could not do that: ' + e.message);
     return;
   }
-  list.innerHTML = appts.map((a) => `
-    <div class="appt-card">
-      <div>
-        <strong>${a.customerName}</strong>
-        <div class="meta">${a.serviceType} · Tech: ${a.technicianName} ${a.customerAddress ? '· ' + a.customerAddress : ''}</div>
-      </div>
-      <span class="badge ${a.status}">${a.status}</span>
-    </div>
-  `).join('');
+  const el = document.getElementById('attn-' + id);
+  if (el) el.classList.add('resolving');
+  setTimeout(loadTodaySurface, 280);
+};
+
+// ---------- People surface ----------
+// Unified directory joining owners + their linked homes, and standalone (ownerless)
+// homes, into one card per real person — see routes/people.js. The old Homes/Owners
+// tables are still one click away (inner pill nav) for bulk tools and power-user edits.
+let peopleCache = [];
+
+async function loadPeopleDirectory() {
+  try {
+    peopleCache = await api('/api/people');
+  } catch (e) {
+    document.getElementById('peopleList').innerHTML = `<div class="empty-state">Could not load People: ${e.message}</div>`;
+    return;
+  }
+  renderPeopleList();
 }
+
+function renderPeopleList() {
+  const search = (document.getElementById('peopleSearch').value || '').toLowerCase().trim();
+  let rows = peopleCache;
+  if (search) {
+    rows = rows.filter((p) =>
+      (p.name || '').toLowerCase().includes(search) ||
+      (p.email || '').toLowerCase().includes(search) ||
+      p.properties.some((pr) => (pr.address || '').toLowerCase().includes(search))
+    );
+  }
+  const grid = document.getElementById('peopleList');
+  grid.innerHTML = rows.length ? rows.map((p) => `
+    <div class="person-card" onclick="openPersonDetail('${p.type}', ${p.type === 'owner' ? p.ownerId : p.customerId})">
+      <div class="person-name">${p.name || 'Unnamed'}</div>
+      <div class="person-meta">${p.properties.length} propert${p.properties.length === 1 ? 'y' : 'ies'}${p.email ? ' · ' + p.email : ''}</div>
+      <div class="person-row">
+        <span class="person-meta">${[...new Set(p.properties.map((pr) => typeLabel(pr.type)))].join(', ') || '—'}</span>
+        ${p.balanceDue > 0 ? `<span class="balance-due-pill">${money(p.balanceDue)} due</span>` : ''}
+      </div>
+    </div>
+  `).join('') : '<div class="empty-state">No people found.</div>';
+}
+document.getElementById('peopleSearch').addEventListener('input', renderPeopleList);
+document.getElementById('newCustomerFromPeopleBtn').addEventListener('click', () => document.getElementById('newCustomerBtn').click());
+
+function sentimentLabel(s) {
+  if (s === 'warm') return 'Warm';
+  if (s === 'cool') return 'Cool';
+  return 'Neutral';
+}
+
+window.openPersonDetail = async (type, id) => {
+  let data;
+  try {
+    data = await api(`/api/people/${type}/${id}`);
+  } catch (e) {
+    alert('Could not load this profile: ' + e.message);
+    return;
+  }
+  const bodyHtml = `
+    <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px;">
+      <div class="portal-sub" style="margin:0;">${type === 'owner' ? 'Owner account' : 'Home (no linked owner account)'}</div>
+      <span class="sentiment-pill ${data.sentiment}">${sentimentLabel(data.sentiment)}${data.sentimentAiGenerated ? ' · AI' : ''}</span>
+    </div>
+    <div class="profile-grid">
+      <div class="profile-section">
+        <h3>Contact</h3>
+        <div class="row"><span class="label">Email:</span> ${data.contact.email || '—'}</div>
+        <div class="row"><span class="label">Phone:</span> ${data.contact.phone || '—'}</div>
+        ${type === 'owner' ? `
+          <div class="row"><span class="label">Agreement:</span> ${data.contact.agreedToTerms ? 'Signed' : 'Not signed'}</div>
+          <div class="row"><span class="label">Autopay:</span> ${data.contact.autopayEnabled ? 'On' : 'Off'}</div>
+        ` : ''}
+        <div class="row"><span class="label">Balance due:</span> ${money(data.balanceDue)}</div>
+        <div style="margin-top:10px;">
+          <button class="btn small" onclick="${type === 'owner' ? `editOwnerFromPeople(${id})` : `editCustomerFromPeople(${id})`}">Edit</button>
+        </div>
+      </div>
+      <div class="profile-section">
+        <h3>Properties (${data.properties.length})</h3>
+        ${data.properties.map((p) => `<div class="row">${p.name}${p.address ? ' — ' + p.address : ''}</div>`).join('') || '<div class="row" style="color:var(--text-faint);">None yet</div>'}
+      </div>
+    </div>
+    ${data.dosageRecommendation.length ? `
+      <div class="profile-section" style="margin-top:14px;">
+        <h3><span class="ripple-tag">✨ Ripple suggests</span><br/>Dosage recommendation</h3>
+        <div>${data.dosageRecommendation.map((r) => `<span class="dose-chip">${r.chemical}: ${r.amountOz} oz (~${r.amountTbsp} tbsp)</span>`).join('')}</div>
+        <div class="portal-hint" style="margin:8px 0 0;">Estimated from the most recent reading (${data.dosageRecommendation.map((r) => r.reason).join('; ')}). Always confirm with a fresh test before dosing.</div>
+      </div>
+    ` : ''}
+    ${data.equipment.length ? `
+      <div class="profile-section" style="margin-top:14px;">
+        <h3>Equipment</h3>
+        ${data.equipment.map((e) => `<div class="row">${e.propertyName}: ${[e.brand, e.model].filter(Boolean).join(' ') || 'On file'}${e.filterLastChanged ? ` · Filter changed ${e.filterLastChanged}` : ''}</div>`).join('')}
+      </div>
+    ` : ''}
+    <div class="profile-section" style="margin-top:14px;">
+      <h3>Service history</h3>
+      ${data.history.length ? data.history.map((v) => `
+        <div class="visit-item">
+          <div class="visit-head"><span>${v.date} — ${v.technician}</span><span>${v.serviceType || ''}</span></div>
+          <div class="visit-summary">${v.summary}${v.summaryAiGenerated ? ' <span class="ripple-tag">✨</span>' : ''}</div>
+        </div>
+      `).join('') : '<div class="row" style="color:var(--text-faint);">No completed visits yet.</div>'}
+    </div>
+  `;
+  openModal(data.contact.name || 'Profile', bodyHtml, true);
+};
+
+window.editCustomerFromPeople = async (id) => {
+  if (!state.customers.length) state.customers = await api('/api/customers');
+  if (!state.owners.length) state.owners = await api('/api/owners');
+  if (!state.services.length) state.services = await api('/api/services');
+  closeModal();
+  editCustomer(Number(id));
+};
+window.editOwnerFromPeople = async (id) => {
+  if (!state.owners.length) state.owners = await api('/api/owners');
+  if (!state.services.length) state.services = await api('/api/services');
+  closeModal();
+  editOwner(Number(id));
+};
+
+// ---------- Team surface ----------
+// Per-technician performance cards (jobs/hours/pay this week, clocked-in status) plus
+// an AI/template weekly pulse sentence — see GET /api/technicians/pulse. The old
+// Technicians/Timesheets tables are still reachable via the inner pill nav for editing
+// logins, correcting a timesheet entry, etc.
+async function loadTeamPulseSurface() {
+  let data;
+  try {
+    data = await api('/api/technicians/pulse');
+  } catch (e) {
+    document.getElementById('teamPulseText').textContent = 'Could not load team pulse: ' + e.message;
+    return;
+  }
+  document.getElementById('teamPulseText').textContent = data.pulse.text;
+
+  const cardsEl = document.getElementById('teamCards');
+  cardsEl.innerHTML = data.cards.length ? data.cards.map((c) => `
+    <div class="tech-card" onclick="toggleTechCard(${c.technicianId})">
+      <div class="tech-card-head">
+        <div class="tech-avatar">${(c.name || '?')[0].toUpperCase()}</div>
+        <div>
+          <div class="tech-name">${c.name}</div>
+          <div class="tech-meta">${c.jobsThisWeek} job${c.jobsThisWeek === 1 ? '' : 's'} this week</div>
+        </div>
+        <span class="tech-clock-badge ${c.clockedIn ? 'in' : 'out'}">${c.clockedIn ? 'Clocked in' : 'Clocked out'}</span>
+      </div>
+      <div class="tech-detail hidden" id="techDetail${c.technicianId}">
+        <div><div class="label">Hours this week</div><div class="value">${c.hoursThisWeek}h</div></div>
+        <div><div class="label">Pay this week</div><div class="value">${money(c.payThisWeek)}</div></div>
+        <div><div class="label">Hourly rate</div><div class="value">${money(c.hourlyRate)}/hr</div></div>
+        <div><div class="label">&nbsp;</div><button class="btn small" onclick="event.stopPropagation(); editTechFromTeam(${c.technicianId})">Edit</button></div>
+      </div>
+    </div>
+  `).join('') : '<div class="empty-state">No technicians yet — add one to get started.</div>';
+}
+window.toggleTechCard = (id) => {
+  const el = document.getElementById('techDetail' + id);
+  if (el) el.classList.toggle('hidden');
+};
+window.editTechFromTeam = async (id) => {
+  if (!state.technicians.length) state.technicians = await api('/api/technicians');
+  editTech(Number(id));
+};
+document.getElementById('newTechFromTeamBtn').addEventListener('click', () => document.getElementById('newTechBtn').click());
+
+// ---------- Money surface ----------
+// A short "needs action" queue (draft invoices to send, overdue invoices to nudge)
+// above a collapsed "recently settled" list, instead of one flat table of everything.
+// Reuses the exact same send/email endpoints the old Invoices tab already used, plus
+// the new AI-drafted /send-nudge endpoint for overdue reminders.
+async function loadMoneyQueue() {
+  let invoices;
+  try {
+    invoices = await api('/api/invoices');
+  } catch (e) {
+    document.getElementById('moneyQueue').innerHTML = `<div class="attention-empty">Could not load invoices: ${e.message}</div>`;
+    return;
+  }
+  state.invoices = invoices;
+  const today = todayStr();
+  const isOverdue = (i) => i.status === 'sent' && !!i.dueDate && i.dueDate < today;
+  const overdue = invoices.filter(isOverdue).sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+  const drafts = invoices.filter((i) => i.status === 'draft');
+  const paidRecent = invoices.filter((i) => i.status === 'paid')
+    .sort((a, b) => (b.issuedDate || '').localeCompare(a.issuedDate || ''))
+    .slice(0, 8);
+
+  const totalOverdue = overdue.reduce((s, i) => s + Number(i.amount || 0), 0);
+  document.getElementById('moneyStats').innerHTML = `
+    <div class="stat-card ${overdue.length ? 'stat-overdue' : ''}"><div class="stat-label">Overdue</div><div class="stat-value">${money(totalOverdue)}</div></div>
+    <div class="stat-card"><div class="stat-label">Drafts to send</div><div class="stat-value">${drafts.length}</div></div>
+    <div class="stat-card"><div class="stat-label">Recently paid</div><div class="stat-value">${paidRecent.length}</div></div>
+  `;
+
+  const queueItems = [
+    ...drafts.map((i) => ({ ...i, __kind: 'draft' })),
+    ...overdue.map((i) => ({ ...i, __kind: 'overdue' })),
+  ];
+  document.getElementById('moneyQueue').innerHTML = queueItems.length ? queueItems.map((i) => `
+    <div class="attention-card" data-kind="unpaid_invoice">
+      <div>
+        <div class="attn-title">${i.customerName} — ${money(i.amount)}</div>
+        <div class="attn-subtitle">${i.__kind === 'draft' ? 'Draft — not sent yet' : `Overdue since ${i.dueDate}`}</div>
+      </div>
+      <div style="display:flex; gap:6px;">
+        ${i.__kind === 'draft'
+          ? `<button class="btn small primary" onclick="sendInvoiceFromQueue(${i.id})">Send</button>`
+          : `<button class="btn small primary" onclick="sendNudgeFromQueue(${i.id})">Send AI nudge</button>`}
+        <button class="btn small" onclick="viewInvoice(${i.id})">View</button>
+      </div>
+    </div>
+  `).join('') : '<div class="attention-empty">Nothing needs action — every invoice is sent or paid.</div>';
+
+  document.getElementById('moneySettled').innerHTML = paidRecent.length
+    ? paidRecent.map((i) => `<div class="settled-row"><span>${i.customerName}</span><span>${money(i.amount)} · Paid ${i.issuedDate || ''}</span></div>`).join('')
+    : '<div class="settled-row" style="justify-content:center; color:var(--text-faint);">No paid invoices yet.</div>';
+}
+window.sendInvoiceFromQueue = async (id) => {
+  try {
+    const r = await api(`/api/invoices/${id}/email`, { method: 'POST' });
+    alert(r.dryRun ? `Email not configured — this was a dry run. Would have gone to ${r.to}.` : `Invoice sent to ${r.to}.`);
+    loadMoneyQueue();
+  } catch (e) {
+    alert('Could not send invoice: ' + e.message);
+  }
+};
+window.sendNudgeFromQueue = async (id) => {
+  try {
+    const r = await api(`/api/invoices/${id}/send-nudge`, { method: 'POST' });
+    alert((r.aiGenerated ? 'AI-drafted reminder sent' : 'Reminder sent') + ` to ${r.to}.` + (r.dryRun ? ' (dry run — email not configured)' : ''));
+    loadMoneyQueue();
+  } catch (e) {
+    alert('Could not send reminder: ' + e.message);
+  }
+};
+document.getElementById('newInvoiceFromMoneyBtn').addEventListener('click', () => document.getElementById('newInvoiceBtn').click());
 
 // ---------- Customers ----------
 function typeLabel(t) {
@@ -2954,7 +3284,7 @@ const appRoot = document.getElementById('appRoot');
 function showAdminApp() {
   adminAuthView.classList.add('hidden');
   appRoot.classList.remove('hidden');
-  loadDashboard();
+  switchSurface('today');
 }
 
 async function checkAdminSession() {

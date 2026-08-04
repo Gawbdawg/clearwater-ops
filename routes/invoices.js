@@ -1,6 +1,7 @@
 const express = require('express');
 const store = require('../lib/store');
 const { sendEmail } = require('../lib/mailer');
+const ai = require('../lib/ai');
 const router = express.Router();
 
 function money(n) {
@@ -134,6 +135,48 @@ Clear Water Spa Service`;
       store.update('invoices', invoice.id, { status: 'sent' });
     }
     res.json({ sent: true, dryRun: !!result.dryRun, to: recipient.email });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// AI (Ripple)-drafted payment reminder — same delivery mechanism as /:id/email (still
+// marks a draft invoice as sent, still points at the same /pay/:id link) but the body
+// text is generated per-invoice from lib/ai.js instead of the fixed template, tuned by
+// how many days overdue this specific invoice is. Falls back to a template automatically
+// if no ANTHROPIC_API_KEY is set — see lib/ai.js.
+router.post('/:id/send-nudge', async (req, res) => {
+  const invoice = store.getById('invoices', req.params.id);
+  if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
+  const recipient = resolveInvoiceRecipient(invoice);
+  if (!recipient) {
+    return res.status(400).json({ error: 'No email on file to send this invoice to yet — add one on the home or owner account first.' });
+  }
+
+  const daysOverdue = invoice.dueDate
+    ? Math.max(0, Math.round((Date.now() - new Date(invoice.dueDate + 'T00:00:00').getTime()) / 86400000))
+    : 0;
+
+  const nudge = await ai.generatePaymentNudge({
+    customerName: recipient.name,
+    amount: money(invoice.amount).replace('$', ''),
+    daysOverdue,
+  });
+
+  const origin = `${req.protocol}://${req.get('host')}`;
+  const payLink = `${origin}/pay/${invoice.id}`;
+  const text = `${nudge.text}\n\nView and pay online any time here: ${payLink}\n\nClear Water Spa Service`;
+
+  try {
+    const result = await sendEmail({
+      to: recipient.email,
+      subject: `Payment reminder — ${money(invoice.amount)} due, Clear Water Spa Service`,
+      text,
+    });
+    if (invoice.status === 'draft') {
+      store.update('invoices', invoice.id, { status: 'sent' });
+    }
+    res.json({ sent: true, dryRun: !!result.dryRun, to: recipient.email, aiGenerated: nudge.aiGenerated });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }

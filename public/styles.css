@@ -6,6 +6,7 @@
   --sidebar-hover: rgba(255,255,255,0.06);
   --sidebar-active: rgba(255,255,255,0.10);
   --accent: #38bdf8;
+  --accent-2: #a78bfa;
   --primary: #0b5f7a;
   --primary-dark: #094a5f;
   --bg: #f4f6f8;
@@ -19,6 +20,30 @@
   --shadow-sm: 0 1px 2px rgba(16,30,38,0.06);
   --shadow-md: 0 4px 14px rgba(16,30,38,0.08);
 }
+
+/* Dark mode — toggled via [data-theme="dark"] on <html> (see darkModeToggle in app.js).
+   Only re-points the same variable names everything above already uses, so every
+   existing rule (old and new) picks up dark styling automatically with zero extra
+   selectors needed anywhere else in this file. */
+html[data-theme="dark"] {
+  --bg: #0b151a;
+  --card-bg: #121f26;
+  --border: #1f333c;
+  --border-strong: #2a4048;
+  --text: #eaf2f5;
+  --text-muted: #9fb4bc;
+  --text-faint: #718790;
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.25);
+  --shadow-md: 0 4px 18px rgba(0,0,0,0.35);
+}
+html[data-theme="dark"] input,
+html[data-theme="dark"] select,
+html[data-theme="dark"] textarea { background: #0e1a20; color: var(--text); border-color: var(--border-strong); }
+html[data-theme="dark"] .btn { background: #142129; color: var(--text); border-color: var(--border-strong); }
+html[data-theme="dark"] .btn:hover { background: #1a2b34; }
+html[data-theme="dark"] .data-table th { background: #0e1a20; }
+html[data-theme="dark"] .data-table tbody tr:hover { background: #0e1a20; }
+html[data-theme="dark"] .modal, html[data-theme="dark"] .drawer { background: var(--card-bg); }
 
 * { box-sizing: border-box; }
 body {
@@ -260,6 +285,141 @@ textarea { width: 100%; resize: vertical; }
   .cal-daylabel { font-size: 10px; }
   .cal-nav h2 { min-width: 0; flex: 1; }
 }
+
+/* ---------- Surface nav (5 top-level surfaces: Today/Schedule/People/Money/Team) ---------- */
+.surface-nav { display: flex; flex-direction: column; gap: 2px; padding: 12px; flex: 1; overflow-y: auto; }
+.surface-btn {
+  display: flex; align-items: center; gap: 11px;
+  background: transparent; border: none; color: var(--sidebar-text);
+  padding: 10px 12px; border-radius: 7px;
+  cursor: pointer; font-size: 14px; font-weight: 500; text-align: left;
+  border-left: 3px solid transparent; transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.surface-btn svg { width: 18px; height: 18px; flex-shrink: 0; stroke: currentColor; }
+.surface-btn:hover { color: var(--sidebar-text-active); background: var(--sidebar-hover); }
+.surface-btn.active {
+  color: var(--sidebar-text-active); background: var(--sidebar-active);
+  font-weight: 600; border-left-color: var(--accent);
+}
+.surface { display: none; }
+.surface.active { display: block; }
+
+/* Inner pill nav — used inside a surface to reach its secondary/"power view" tabs
+   (e.g. Schedule's Calendar/Daily Dispatch/Property Calendar/Requests, or People's
+   People/Homes/Owners). Reuses the exact same .tab-btn + data-tab click handling the
+   original 14-tab sidebar used, just rendered as pills instead of a vertical list. */
+.inner-nav { display: flex; gap: 6px; margin-bottom: 18px; flex-wrap: wrap; }
+.inner-nav .tab-btn.inner {
+  background: var(--card-bg); border: 1px solid var(--border); color: var(--text-muted);
+  padding: 6px 14px; border-radius: 999px; font-size: 13px; font-weight: 600; cursor: pointer;
+}
+.inner-nav .tab-btn.inner:hover { border-color: var(--border-strong); color: var(--text); }
+.inner-nav .tab-btn.inner.active { background: var(--primary); border-color: var(--primary); color: #fff; }
+
+.surface-subheading { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-faint); margin: 22px 0 10px; }
+
+/* ---------- Ripple (AI layer) briefing / pulse card ---------- */
+.ripple-hairline {
+  border-radius: 13px; padding: 1px;
+  background: linear-gradient(120deg, var(--accent), var(--accent-2), var(--accent));
+  margin-bottom: 18px;
+}
+.ripple-briefing {
+  background: var(--card-bg); border-radius: 12px; padding: 16px 18px;
+  display: flex; align-items: flex-start; gap: 12px;
+}
+.ripple-spark { width: 18px; height: 18px; flex-shrink: 0; stroke: var(--accent); margin-top: 2px; }
+.ripple-briefing-text { font-size: 14.5px; line-height: 1.55; color: var(--text); }
+.ripple-tag {
+  display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 700;
+  color: var(--accent); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 4px;
+}
+.ripple-tag svg { width: 12px; height: 12px; stroke: currentColor; }
+
+/* ---------- Team status strip (Today surface) ---------- */
+.team-strip { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 6px; }
+.team-chip {
+  display: flex; align-items: center; gap: 8px; background: var(--card-bg); border: 1px solid var(--border);
+  border-radius: 999px; padding: 6px 14px 6px 8px; font-size: 13px; box-shadow: var(--shadow-sm);
+}
+.team-chip .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--border-strong); flex-shrink: 0; }
+.team-chip.clocked-in .dot { background: #2fb35a; box-shadow: 0 0 0 3px rgba(47,179,90,0.18); }
+.team-chip .name { font-weight: 600; color: var(--text); }
+.team-chip .meta { color: var(--text-faint); }
+
+/* ---------- Attention list (Today + Money surfaces) ---------- */
+.attention-list { display: flex; flex-direction: column; gap: 8px; }
+.attention-card {
+  background: var(--card-bg); border: 1px solid var(--border); border-left: 3px solid var(--border-strong);
+  border-radius: var(--radius); padding: 12px 15px; box-shadow: var(--shadow-sm);
+  display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap;
+  transition: opacity 0.25s, transform 0.25s;
+}
+.attention-card.resolving { opacity: 0; transform: translateX(8px); }
+.attention-card .attn-title { font-weight: 600; font-size: 14px; color: var(--text); }
+.attention-card .attn-subtitle { font-size: 12.5px; color: var(--text-muted); margin-top: 2px; }
+.attention-card[data-kind="overdue_job"] { border-left-color: #d97706; }
+.attention-card[data-kind="unpaid_invoice"] { border-left-color: #dc2626; }
+.attention-card[data-kind="filter_due"] { border-left-color: var(--accent-2); }
+.attention-card[data-kind="new_signup"] { border-left-color: #2fb35a; }
+.attention-card[data-kind="service_request"] { border-left-color: var(--primary); }
+.attention-empty { color: var(--text-faint); font-size: 14px; padding: 24px; text-align: center; background: var(--card-bg); border: 1px dashed var(--border-strong); border-radius: var(--radius); }
+.settled-list { display: flex; flex-direction: column; gap: 6px; }
+.settled-row { display: flex; justify-content: space-between; font-size: 13px; color: var(--text-muted); padding: 8px 12px; background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; }
+
+/* ---------- People surface: unified directory ---------- */
+.people-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.person-card {
+  background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px;
+  box-shadow: var(--shadow-sm); cursor: pointer; transition: box-shadow 0.15s, transform 0.15s, border-color 0.15s;
+}
+.person-card:hover { box-shadow: var(--shadow-md); border-color: var(--border-strong); transform: translateY(-1px); }
+.person-card .person-name { font-weight: 700; font-size: 15px; color: var(--text); }
+.person-card .person-meta { font-size: 12.5px; color: var(--text-muted); margin-top: 3px; }
+.person-card .person-row { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; }
+.sentiment-pill { display: inline-flex; align-items: center; gap: 4px; font-size: 11.5px; font-weight: 700; padding: 2px 9px; border-radius: 999px; }
+.sentiment-pill.warm { background: #e5f5e8; color: #256b32; }
+.sentiment-pill.neutral { background: #fef3e0; color: #a3690b; }
+.sentiment-pill.cool { background: #fbe7e6; color: #a3382f; }
+.balance-due-pill { font-size: 12.5px; font-weight: 700; color: #a3382f; }
+
+/* ---------- People detail (opened inside the standard modal, wide) ---------- */
+.people-detail-tabs { display: flex; gap: 6px; margin-bottom: 14px; flex-wrap: wrap; }
+.people-detail-tabs button {
+  background: var(--bg); border: 1px solid var(--border); color: var(--text-muted);
+  padding: 5px 12px; border-radius: 999px; font-size: 12.5px; font-weight: 600; cursor: pointer;
+}
+.people-detail-tabs button.active { background: var(--primary); border-color: var(--primary); color: #fff; }
+.visit-item { border-bottom: 1px solid var(--border); padding: 10px 0; }
+.visit-item:last-child { border-bottom: none; }
+.visit-item .visit-head { display: flex; justify-content: space-between; font-size: 13px; font-weight: 600; }
+.visit-item .visit-summary { font-size: 13px; color: var(--text-muted); margin-top: 3px; }
+.dose-chip { display: inline-block; background: #f0eefc; color: #5b3fae; font-size: 12px; padding: 3px 9px; border-radius: 7px; margin: 3px 6px 0 0; }
+
+/* ---------- Team surface: performance cards ---------- */
+.team-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+.tech-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; box-shadow: var(--shadow-sm); cursor: pointer; }
+.tech-card .tech-card-head { display: flex; align-items: center; gap: 10px; }
+.tech-avatar {
+  width: 36px; height: 36px; border-radius: 50%; background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; flex-shrink: 0;
+}
+.tech-card .tech-name { font-weight: 700; font-size: 14.5px; color: var(--text); }
+.tech-card .tech-meta { font-size: 12px; color: var(--text-muted); }
+.tech-card .tech-detail { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 12.5px; }
+.tech-card .tech-detail .label { color: var(--text-faint); font-size: 11px; text-transform: uppercase; letter-spacing: 0.03em; }
+.tech-card .tech-detail .value { font-weight: 600; color: var(--text); margin-top: 2px; }
+.tech-clock-badge { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; margin-left: auto; }
+.tech-clock-badge.in { background: #e5f5e8; color: #256b32; }
+.tech-clock-badge.out { background: var(--bg); color: var(--text-faint); }
+
+/* ---------- Settings slide-over drawer ---------- */
+.drawer-overlay { position: fixed; inset: 0; background: rgba(11,20,25,0.5); z-index: 60; display: flex; justify-content: flex-end; }
+.drawer-overlay.hidden { display: none; }
+.drawer { width: 620px; max-width: 94vw; height: 100vh; background: var(--card-bg); box-shadow: -8px 0 30px rgba(0,0,0,0.18); display: flex; flex-direction: column; animation: drawerSlideIn 0.22s ease; }
+@keyframes drawerSlideIn { from { transform: translateX(24px); opacity: 0.6; } to { transform: translateX(0); opacity: 1; } }
+.drawer-header { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid var(--border); gap: 12px; }
+.drawer-body { padding: 20px; overflow-y: auto; flex: 1; }
 
 /* ---------- Responsive: collapse sidebar on narrow screens ---------- */
 @media (max-width: 860px) {
