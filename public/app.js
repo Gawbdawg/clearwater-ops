@@ -101,7 +101,15 @@ async function loadDashboard() {
 
 // ---------- Customers ----------
 function typeLabel(t) {
-  return t === 'vacation' ? 'Vacation rental' : 'Residential';
+  if (t === 'vacation') return 'Vacation rental';
+  if (t === 'repair') return 'Repair';
+  return 'Residential';
+}
+
+function typeBadgeClass(t) {
+  if (t === 'vacation') return 'sent';
+  if (t === 'repair') return 'draft';
+  return 'completed';
 }
 
 // Days until a filter is "due" based on its interval — negative means overdue.
@@ -155,7 +163,7 @@ function renderCustomerTable() {
   tbody.innerHTML = rows.map((c) => `
     <tr>
       <td>${c.name}</td>
-      <td><span class="badge ${c.type === 'vacation' ? 'sent' : 'completed'}">${typeLabel(c.type)}</span></td>
+      <td><span class="badge ${typeBadgeClass(c.type)}">${typeLabel(c.type)}</span></td>
       <td>${c.phone || ''}</td>
       <td>${c.email || ''}</td>
       <td>${c.address || ''} ${addressStatusBadge(c)}</td>
@@ -217,6 +225,7 @@ function customerForm(c = {}) {
       <select id="f_type">
         <option value="residential" ${(c.type || 'residential') === 'residential' ? 'selected' : ''}>Residential</option>
         <option value="vacation" ${c.type === 'vacation' ? 'selected' : ''}>Vacation rental</option>
+        <option value="repair" ${c.type === 'repair' ? 'selected' : ''}>Repair</option>
       </select>
     </label>
     <label>Phone<input id="f_phone" value="${c.phone || ''}" /></label>
@@ -606,16 +615,13 @@ function renderOwnerTable() {
 document.getElementById('ownerTypeFilter').addEventListener('change', renderOwnerTable);
 document.getElementById('ownerSearchInput').addEventListener('input', renderOwnerTable);
 
-// Same badge language as the Homes tab's Vacation rental / Residential type — an
-// owner can show both if their linked homes are a mix, or neither yet if they have
-// no homes linked at all.
+// Same badge language as the Homes tab's Vacation rental / Residential / Repair type
+// — an owner can show more than one if their linked homes are a mix, or neither yet
+// if they have no homes linked at all.
 function ownerTypeBadges(propertyTypes) {
   const types = propertyTypes || [];
   if (types.length === 0) return '<span style="color:var(--text-faint); font-size:12px;">No homes yet</span>';
-  return types.map((t) => t === 'vacation'
-    ? '<span class="badge scheduled">Vacation rental</span>'
-    : '<span class="badge draft">Residential</span>'
-  ).join(' ');
+  return types.map((t) => `<span class="badge ${typeBadgeClass(t)}">${typeLabel(t)}</span>`).join(' ');
 }
 
 function ownerForm(o = {}) {

@@ -142,6 +142,7 @@
             <select id="apType">
               <option value="residential">Residential — regular recurring service</option>
               <option value="vacation">Vacation rental — cleaned between guest bookings</option>
+              <option value="repair">Repair — one-off repairs & diagnostic visits</option>
             </select>
           </label>
           <div style="display:flex; gap:8px;">
@@ -191,6 +192,7 @@
                 <select id="epType">
                   <option value="residential">Residential — regular recurring service</option>
                   <option value="vacation">Vacation rental — cleaned between guest bookings</option>
+                  <option value="repair">Repair — one-off repairs & diagnostic visits</option>
                 </select>
               </label>
               <p class="portal-sub" style="margin:0 0 8px;">Switching to "Vacation rental" adds a Booking calendar tab where you can paste your iCal export link.</p>
@@ -203,6 +205,17 @@
 
           <div id="serviceSetupCard" class="portal-card hidden" style="max-width:none; margin:20px 0 0;">
             <div id="serviceSetupContent"></div>
+          </div>
+
+          <!-- Repair-type properties only: same recurring "set up regular service"
+               option residential properties get above, plus this explicit switch to
+               decline it if routine maintenance isn't what they're looking for. -->
+          <div id="maintenanceOptOutCard" class="portal-card hidden" style="max-width:none; margin:20px 0 0;">
+            <label style="flex-direction:row; align-items:center; gap:8px;">
+              <input type="checkbox" id="maintenanceOptOutToggle" style="width:auto;" />
+              <span>Opt out of routine maintenance service for this property</span>
+            </label>
+            <p class="portal-sub" style="margin:4px 0 0;" id="maintenanceOptOutStatus">Leave this unchecked if you'd also like the option to set up regular maintenance visits above — check it if you just want us on call for repairs.</p>
           </div>
 
           <div class="portal-card" style="max-width:none; margin:16px 0 0;">

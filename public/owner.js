@@ -184,25 +184,37 @@ function onPropertyChange() {
   loadOwnerCalendar();
 }
 
+function propertyTypeLabel(type) {
+  if (type === 'vacation') return 'Vacation rental';
+  if (type === 'repair') return 'Repair';
+  return 'Residential';
+}
+
 // ---- Edit property (name/address/type) ----
 // The type field matters beyond labeling: the Booking calendar tab (and the iCal link
 // field on it — see saveIcalBtn below) only shows up for type:'vacation' properties, so
-// this is also how an owner switches a property to vacation after the fact if they added
-// it as residential (or the reverse).
+// this is also how an owner switches a property's type after the fact. The maintenance
+// opt-out toggle only shows for type:'repair' — see maintenanceOptOutToggle below.
 function renderPropertyDetails(p) {
   document.getElementById('propertyDetailsName').textContent = p.name;
   document.getElementById('propertyDetailsMeta').textContent =
-    `${p.type === 'vacation' ? 'Vacation rental' : 'Residential'}${p.address ? ' · ' + p.address : ''}`;
+    `${propertyTypeLabel(p.type)}${p.address ? ' · ' + p.address : ''}`;
   document.getElementById('editPropertyForm').classList.add('hidden');
   document.getElementById('propertyDetailsView').classList.remove('hidden');
   document.getElementById('editPropertyError').classList.add('hidden');
+
+  const optOutCard = document.getElementById('maintenanceOptOutCard');
+  optOutCard.classList.toggle('hidden', p.type !== 'repair');
+  if (p.type === 'repair') {
+    document.getElementById('maintenanceOptOutToggle').checked = !!p.maintenanceOptOut;
+  }
 }
 
 document.getElementById('editPropertyBtn').addEventListener('click', () => {
   const p = selectedProperty();
   document.getElementById('epName').value = p.name || '';
   document.getElementById('epAddress').value = p.address || '';
-  document.getElementById('epType').value = p.type === 'vacation' ? 'vacation' : 'residential';
+  document.getElementById('epType').value = ['vacation', 'repair'].includes(p.type) ? p.type : 'residential';
   document.getElementById('editPropertyError').classList.add('hidden');
   document.getElementById('propertyDetailsView').classList.add('hidden');
   document.getElementById('editPropertyForm').classList.remove('hidden');
@@ -1219,6 +1231,30 @@ document.getElementById('newsletterToggle').addEventListener('change', async (e)
     statusEl.textContent = subscribed ? 'Saved — you\'re on the list.' : "Saved — you're unsubscribed.";
   } catch (err) {
     e.target.checked = !subscribed;
+    statusEl.textContent = 'Could not save that — please try again.';
+  } finally {
+    e.target.disabled = false;
+  }
+});
+
+// ---- Repair properties: opt out of routine maintenance service ----
+document.getElementById('maintenanceOptOutToggle').addEventListener('change', async (e) => {
+  const statusEl = document.getElementById('maintenanceOptOutStatus');
+  const optOut = e.target.checked;
+  e.target.disabled = true;
+  try {
+    const result = await api(`/api/owner/properties/${selectedPropertyId}/maintenance-opt-out`, {
+      method: 'PUT',
+      body: JSON.stringify({ optOut }),
+    });
+    const p = properties.find((x) => x.id === selectedPropertyId);
+    if (p) p.maintenanceOptOut = result.maintenanceOptOut;
+    statusEl.textContent = optOut
+      ? "Saved — you're opted out. We won't offer this property a recurring maintenance schedule."
+      : "Saved — you're opted back in. Set up a schedule above any time.";
+    await loadServiceSetup();
+  } catch (err) {
+    e.target.checked = !optOut;
     statusEl.textContent = 'Could not save that — please try again.';
   } finally {
     e.target.disabled = false;

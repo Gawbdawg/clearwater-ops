@@ -25,6 +25,7 @@ const payRouter = require('./routes/pay');
 const stripeWebhookHandler = require('./routes/stripeWebhook');
 const { requireAdminAuth } = require('./lib/auth');
 const { startAutoCalendarSync } = require('./lib/autoSync');
+const store = require('./lib/store');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -97,6 +98,12 @@ app.get('/healthz', (req, res) => res.json({ ok: true }));
 
 app.listen(PORT, () => {
   console.log(`Clear Water Spa Service running at http://localhost:${PORT}`);
+  // Make sure the repair-account feature's catalog entries (Diagnostic Visit service,
+  // Emergency Service addon) exist without the admin having to add them by hand —
+  // matches by name, so this is a no-op after the first run. See lib/store.js.
+  const seedResult = store.ensureDefaultCatalogEntries();
+  if (seedResult.diagnosticServiceAdded) console.log('Added default "Diagnostic Visit" service ($125) to the catalog.');
+  if (seedResult.emergencyAddonAdded) console.log('Added default "Emergency Service (within 24 hrs)" add-on ($75) to the catalog.');
   // Keep vacation-rental booking calendars fresh without anyone having to remember to
   // click "Sync now" — see lib/autoSync.js for details/caveats (only runs while the
   // app itself is awake).

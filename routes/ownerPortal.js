@@ -18,6 +18,14 @@ function myProperty(req, propertyId) {
   return property;
 }
 
+// Three property types an owner can pick: 'vacation' and 'repair' are explicit
+// choices, everything else (including a blank/unrecognized value) falls back to
+// 'residential' — same normalization the admin side uses in routes/owners.js.
+function normalizePropertyType(type) {
+  if (type === 'vacation' || type === 'repair') return type;
+  return 'residential';
+}
+
 // Lets an owner opt in/out of newsletter emails at any time, regardless of the default
 // set when their account was created (e.g. from their signed waiver) — every send
 // should be easy to back out of.
@@ -85,7 +93,7 @@ router.post('/properties', async (req, res) => {
   const property = store.create('customers', {
     name: name.trim(),
     address: address ? address.trim() : '',
-    type: type === 'vacation' ? 'vacation' : 'residential',
+    type: normalizePropertyType(type),
     ownerId: req.session.ownerId,
     email: '',
     phone: '',
@@ -118,7 +126,7 @@ router.put('/properties/:id', async (req, res) => {
   const updates = {
     name: name.trim(),
     address: address ? address.trim() : '',
-    type: type === 'vacation' ? 'vacation' : 'residential',
+    type: normalizePropertyType(type),
   };
 
   if (updates.address && updates.address !== (property.address || '')) {
@@ -136,16 +144,33 @@ router.put('/properties/:id', async (req, res) => {
   res.json(updated);
 });
 
+// Repair-type properties get the same recurring "set up my regular service" option
+// residential properties have (unlike vacation, which is always fully blocked below) —
+// but since ongoing maintenance isn't really the point of a repair account, they also
+// get this explicit on/off switch to decline it if they'd rather just be called for
+// one-off repairs. Checked by service-setup/schedule-service/service-frequency below
+// so the block holds even if something bypasses the portal UI.
+router.put('/properties/:id/maintenance-opt-out', (req, res) => {
+  const property = myProperty(req, req.params.id);
+  if (!property) return res.status(404).json({ error: 'Property not found' });
+  const updated = store.update('customers', property.id, { maintenanceOptOut: !!req.body.optOut });
+  res.json({ maintenanceOptOut: updated.maintenanceOptOut });
+});
+
 // Pricing preview + current frequency for the "set up my regular service" flow —
 // lets an owner see what weekly/biweekly/every-4-weeks actually costs before picking
-// one, without needing to call and ask. Only meaningful for residential properties;
-// vacation rentals get cleaned around guest bookings instead (see /bookings above and
-// lib/turnoverSchedule.js), not on a fixed calendar frequency.
+// one, without needing to call and ask. Not offered for vacation rentals, which get
+// cleaned around guest bookings instead (see /bookings above and lib/turnoverSchedule.js),
+// not on a fixed calendar frequency, or for a repair property that's opted out of
+// routine maintenance via the switch above.
 router.get('/properties/:id/service-setup', (req, res) => {
   const property = myProperty(req, req.params.id);
   if (!property) return res.status(404).json({ error: 'Property not found' });
   if (property.type === 'vacation') {
     return res.json({ available: false, reason: 'vacation' });
+  }
+  if (property.maintenanceOptOut) {
+    return res.json({ available: false, reason: 'optedOut' });
   }
   const service = store.getAll('services').find((s) => s.pricingMode === 'frequency');
   if (!service) {
@@ -176,6 +201,9 @@ router.post('/properties/:id/schedule-service', (req, res) => {
   if (!property) return res.status(404).json({ error: 'Property not found' });
   if (property.type === 'vacation') {
     return res.status(400).json({ error: 'Vacation properties are scheduled automatically around your guest bookings instead.' });
+  }
+  if (property.maintenanceOptOut) {
+    return res.status(400).json({ error: "This property has opted out of routine maintenance service — turn that off first if you'd like to set up a regular schedule." });
   }
   const { frequency, startDate } = req.body;
   if (!['weekly', 'biweekly', 'every4weeks'].includes(frequency)) {
@@ -215,6 +243,9 @@ router.put('/properties/:id/service-frequency', (req, res) => {
   if (!property) return res.status(404).json({ error: 'Property not found' });
   if (property.type === 'vacation') {
     return res.status(400).json({ error: 'Vacation properties are scheduled automatically around your guest bookings instead.' });
+  }
+  if (property.maintenanceOptOut) {
+    return res.status(400).json({ error: "This property has opted out of routine maintenance service — turn that off first if you'd like to set up a regular schedule." });
   }
   const { frequency, startDate } = req.body;
   if (!['weekly', 'biweekly', 'every4weeks'].includes(frequency)) {

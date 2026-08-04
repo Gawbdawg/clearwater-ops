@@ -7,14 +7,19 @@ const { buildAgreementPdf } = require('../lib/agreementPdf');
 const router = express.Router();
 
 // Owners aren't tagged with a type of their own — they're organized into vacation
-// rental vs. residential the same way the Homes tab is, just derived from whatever
-// their linked homes actually are. An owner with only vacation-rental homes shows as
-// "Vacation rental," only residential shows as "Residential," and one with a mix of
-// both (e.g. Gabrie: one vacation rental + one residential) shows both badges and
-// matches either filter — there's no separate field to keep in sync by hand.
+// rental vs. residential vs. repair the same way the Homes tab is, just derived from
+// whatever their linked homes actually are. An owner with only vacation-rental homes
+// shows as "Vacation rental," only residential shows as "Residential," only repair
+// shows as "Repair," and one with a mix (e.g. one vacation rental + one residential)
+// shows every badge that applies and matches any of those filters — there's no
+// separate field to keep in sync by hand.
+function normalizePropertyType(type) {
+  if (type === 'vacation' || type === 'repair') return type;
+  return 'residential';
+}
 function withPropertyCount(owner) {
   const properties = store.getAll('customers').filter((c) => c.ownerId === owner.id);
-  const propertyTypes = [...new Set(properties.map((c) => (c.type === 'vacation' ? 'vacation' : 'residential')))];
+  const propertyTypes = [...new Set(properties.map((c) => normalizePropertyType(c.type)))];
   return { ...sanitizeOwner(owner), propertyCount: properties.length, propertyTypes };
 }
 
