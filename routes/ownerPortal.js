@@ -8,6 +8,7 @@ const { previewFrequencyPricing, maybeCreateCancellationFeeInvoice } = require('
 const { generateRecurringSeries } = require('../lib/scheduleFromFrequency');
 const { businessTimeToUtc } = require('../lib/timezone');
 const stripe = require('../lib/stripeClient');
+const ai = require('../lib/ai');
 const router = express.Router();
 
 router.use(requireOwnerAuth);
@@ -60,6 +61,67 @@ router.post('/agree-to-terms', (req, res) => {
 // routes/addons.js.
 router.get('/addons', (req, res) => {
   res.json(store.getAll('addons').sort((a, b) => a.name.localeCompare(b.name)));
+});
+
+// Powers the "Home" tab's Ripple briefing card: next scheduled visit, pending request
+// count, current balance (and whether autopay will handle it), and an AI/template
+// visit summary of the most recently completed job — one call instead of the client
+// piecing this together from three separate list endpoints itself. Read-only; doesn't
+// touch any existing collection.
+router.get('/briefing', async (req, res) => {
+  const owner = store.getById('owners', req.session.ownerId);
+  if (!owner) return res.status(404).json({ error: 'Owner not found' });
+  const myPropertyIds = store.getAll('customers')
+    .filter((c) => c.ownerId === req.session.ownerId)
+    .map((c) => c.id);
+  const today = new Date().toISOString().slice(0, 10);
+  const appts = store.getAll('appointments').filter((a) => myPropertyIds.includes(a.customerId));
+
+  const nextVisit = appts
+    .filter((a) => a.status === 'scheduled' && a.date >= today)
+    .sort((a, b) => a.date.localeCompare(b.date))[0] || null;
+  const lastCompleted = appts
+    .filter((a) => a.status === 'completed')
+    .sort((a, b) => b.date.localeCompare(a.date))[0] || null;
+
+  const pendingRequests = store.getAll('serviceRequests')
+    .filter((r) => myPropertyIds.includes(r.customerId) && r.status === 'pending').length;
+
+  const balanceDue = store.getAll('invoices')
+    .filter((i) => (i.ownerId === owner.id || myPropertyIds.includes(i.customerId)) && i.status !== 'paid' && i.status !== 'draft')
+    .reduce((sum, i) => sum + Number(i.amount || 0), 0);
+
+  let lastVisitSummary = null;
+  if (lastCompleted) {
+    const property = store.getById('customers', lastCompleted.customerId);
+    const summary = await ai.generateVisitSummary({
+      notes: lastCompleted.notes || '',
+      chlorine: lastCompleted.chlorine || '',
+      ph: lastCompleted.ph || '',
+      alkalinity: lastCompleted.alkalinity || '',
+    });
+    lastVisitSummary = {
+      date: lastCompleted.date,
+      propertyName: property ? property.name : '',
+      text: summary.text,
+      aiGenerated: summary.aiGenerated,
+    };
+  }
+
+  const briefing = await ai.generateOwnerBriefing({
+    nextVisitDate: nextVisit ? nextVisit.date : null,
+    pendingRequests,
+    balanceDue: Math.round(balanceDue * 100) / 100,
+    autopayEnabled: !!owner.autopayEnabled,
+  });
+
+  res.json({
+    briefing,
+    nextVisit: nextVisit ? { date: nextVisit.date, propertyName: (store.getById('customers', nextVisit.customerId) || {}).name } : null,
+    pendingRequests,
+    balanceDue: Math.round(balanceDue * 100) / 100,
+    lastVisitSummary,
+  });
 });
 
 // ---- This owner's properties ----

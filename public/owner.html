@@ -169,15 +169,25 @@
         </div>
 
         <nav class="owner-tabs" id="ownerTabs">
-          <button class="owner-tab-btn active" data-tab="overview">Overview</button>
+          <button class="owner-tab-btn active" data-tab="overview">Home</button>
           <button class="owner-tab-btn" data-tab="visits">Services</button>
-          <button class="owner-tab-btn" data-tab="svccal">Calendar</button>
-          <button class="owner-tab-btn hidden" id="calendarTabBtn" data-tab="calendar">Booking calendar</button>
+          <button class="owner-tab-btn" data-tab="svccal">Schedule</button>
+          <button class="owner-tab-btn hidden" id="calendarTabBtn" data-tab="calendar">Guest bookings</button>
           <button class="owner-tab-btn" data-tab="requests">Requests <span id="pendingRequestsBadge" class="tab-count hidden"></span></button>
         </nav>
 
-        <!-- Overview -->
+        <!-- Overview / "Home" -->
         <div id="tab-overview" class="owner-tab-panel">
+          <div class="ripple-hairline" id="ownerBriefingCard">
+            <div class="ripple-briefing">
+              <svg class="ripple-spark" viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l1.8 5.9L20 9.5l-6.2 1.6L12 17l-1.8-5.9L4 9.5l6.2-1.6z"/></svg>
+              <div>
+                <div id="ownerBriefingText" class="ripple-briefing-text">Loading your update…</div>
+                <div id="ownerLastVisitSummary" class="ripple-briefing-text hidden" style="margin-top:8px; font-size:13px; color:var(--text-muted);"></div>
+              </div>
+            </div>
+          </div>
+
           <div class="owner-summary-grid" id="overviewSummary"></div>
 
           <div class="portal-card" style="max-width:none; margin:16px 0 0;">
@@ -251,7 +261,7 @@
 
         <!-- Service calendar -->
         <div id="tab-svccal" class="owner-tab-panel hidden">
-          <h2>Calendar</h2>
+          <h2>Schedule</h2>
           <p class="portal-sub">Blue days are scheduled, green are completed, amber are pending requests. Click any open day to request service.</p>
           <div id="svcCalPropertyFilterRow" class="filter-row hidden">
             <label>Property

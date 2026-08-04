@@ -167,6 +167,29 @@ async function showDash(owner) {
   loadVisits();
   loadRequests();
   loadOverview();
+  loadBriefing();
+}
+
+// ---- Home briefing (Ripple) ----
+// One short, warm status line (real AI if the office has set it up, a plain template
+// otherwise — see lib/ai.js) plus, if there's a completed visit on file, an AI/template
+// summary of the most recent one. Never blocks the rest of the dashboard from loading.
+async function loadBriefing() {
+  const textEl = document.getElementById('ownerBriefingText');
+  const lastVisitEl = document.getElementById('ownerLastVisitSummary');
+  try {
+    const data = await api('/api/owner/briefing');
+    textEl.textContent = data.briefing.text;
+    if (data.lastVisitSummary) {
+      const v = data.lastVisitSummary;
+      lastVisitEl.innerHTML = `<strong>Last visit</strong> (${niceDateShort(v.date)}${properties.length > 1 && v.propertyName ? ' — ' + v.propertyName : ''}): ${v.text}`;
+      lastVisitEl.classList.remove('hidden');
+    } else {
+      lastVisitEl.classList.add('hidden');
+    }
+  } catch (e) {
+    textEl.textContent = 'Everything about your service, all in one place.';
+  }
 }
 
 function onPropertyChange() {
