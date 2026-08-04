@@ -1599,6 +1599,19 @@ window.editAppt = async (id) => {
   });
 };
 
+// Quick one-click resolution for a row in Reports → Uncompleted tasks — skips opening
+// the full edit modal for the common case (the job actually happened, it just never
+// got marked). Falls back to "Edit" on the same row for anything less routine, e.g.
+// re-dating a job that was actually missed and needs to be rescheduled instead.
+window.markApptCompleteFromReport = async (id) => {
+  try {
+    await api('/api/appointments/' + id, { method: 'PUT', body: JSON.stringify({ status: 'completed' }) });
+    await loadReports();
+  } catch (e) {
+    alert('Could not mark complete: ' + e.message);
+  }
+};
+
 window.deleteAppt = async (id) => {
   const a = state.appointments.find((x) => x.id === id);
   let scope = '';
@@ -2105,11 +2118,26 @@ async function loadReports() {
   state.reportAppointments = appointments;
   state.reportOwners = owners;
   state.reportCustomers = customers;
+  // Also keep state.appointments/technicians fresh here (not just on the Calendar tab)
+  // so editAppt()/markApptCompleteFromReport() below work correctly even if the admin
+  // opens Reports first, before ever visiting Calendar this session.
+  state.appointments = appointments;
+  if (state.technicians.length === 0) state.technicians = technicians;
+  if (state.customers.length === 0) state.customers = customers;
   populateReportOwnerSelect();
 
   const completed = appointments.filter((a) => a.status === 'completed');
   const paidInvoices = invoices.filter((i) => i.status === 'paid');
   const totalRevenue = paidInvoices.reduce((sum, i) => sum + Number(i.amount || 0), 0);
+
+  // Still "scheduled" (never marked completed OR cancelled) with a date that's already
+  // passed — a missed visit, or one the tech forgot to close out in their portal.
+  // Today's still-pending jobs don't count as overdue yet; they're not due until today
+  // ends.
+  const today = todayStr();
+  const uncompleted = appointments
+    .filter((a) => a.status === 'scheduled' && a.date < today)
+    .sort((a, b) => a.date.localeCompare(b.date)); // oldest/most-overdue first
 
   const techCounts = {};
   completed.forEach((a) => {
@@ -2131,7 +2159,29 @@ async function loadReports() {
       <div class="stat-label">Busiest technician</div>
       <div class="stat-value" style="font-size:16px;">${busiestTech ? `${busiestTech[0]} (${busiestTech[1]})` : '—'}</div>
     </div>
+    <div class="stat-card ${uncompleted.length ? 'stat-overdue' : ''}">
+      <div class="stat-label">Uncompleted tasks</div>
+      <div class="stat-value">${uncompleted.length}</div>
+    </div>
   `;
+
+  const daysOverdue = (dateStr) => Math.round((new Date(today + 'T00:00:00') - new Date(dateStr + 'T00:00:00')) / 86400000);
+  const uncompletedBody = document.getElementById('uncompletedTasksBody');
+  uncompletedBody.innerHTML = uncompleted.length
+    ? uncompleted.map((a) => `
+        <tr class="row-overdue">
+          <td>${a.date}</td>
+          <td><span class="badge cancelled">${daysOverdue(a.date)} day${daysOverdue(a.date) === 1 ? '' : 's'}</span></td>
+          <td>${a.customerName || 'Unknown'}</td>
+          <td>${a.serviceType || ''}</td>
+          <td>${a.technicianName || 'Unassigned'}</td>
+          <td style="display:flex; gap:6px; flex-wrap:wrap;">
+            <button class="btn small primary" onclick="markApptCompleteFromReport(${a.id})">Mark complete</button>
+            <button class="btn small" onclick="editAppt(${a.id})">Edit</button>
+          </td>
+        </tr>
+      `).join('')
+    : '<tr><td colspan="6" class="empty-state">Nothing overdue — every past job has been marked complete or cancelled.</td></tr>';
 
   const months = lastNMonthKeys(6);
 
