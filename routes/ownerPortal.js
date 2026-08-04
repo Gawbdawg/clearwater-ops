@@ -7,6 +7,7 @@ const { geocodeAddress } = require('../lib/geocode');
 const { previewFrequencyPricing, maybeCreateCancellationFeeInvoice } = require('../lib/autoInvoice');
 const { generateRecurringSeries } = require('../lib/scheduleFromFrequency');
 const { businessTimeToUtc } = require('../lib/timezone');
+const stripe = require('../lib/stripeClient');
 const router = express.Router();
 
 router.use(requireOwnerAuth);
@@ -464,6 +465,76 @@ router.delete('/service-requests/:id', (req, res) => {
   }
   store.remove('serviceRequests', req.params.id);
   res.status(204).end();
+});
+
+// ---- Autopay: save a card, get billed automatically instead of manually paying each
+// invoice — for weekly/biweekly/monthly clients this means no more chasing invoices
+// down each time a job's done. Off by default; the owner turns it on/off here any time.
+// The actual charging happens elsewhere (lib/autopay.js, called from every place a new
+// invoice gets created) — this file just handles saving/removing the card itself.
+
+// Kicks off Stripe's hosted "save a card" flow: creates a Stripe Customer for this
+// owner if they don't have one yet (reused on every future setup attempt, e.g. if they
+// disable and re-enable autopay later, or the card on file expires), then a Checkout
+// Session in mode:'setup' pointed at it. No charge happens on this page — it only
+// collects and saves card details. ownerId travels in the session's metadata so
+// routes/stripeWebhook.js knows whose account to turn autopay on for once it's done.
+router.post('/autopay/start', async (req, res) => {
+  if (!stripe.isConfigured()) {
+    return res.status(400).json({ error: "Online payments aren't turned on yet — ask the office to set up Stripe first." });
+  }
+  const owner = store.getById('owners', req.session.ownerId);
+  if (!owner) return res.status(404).json({ error: 'Owner not found' });
+
+  try {
+    let stripeCustomerId = owner.stripeCustomerId;
+    if (!stripeCustomerId) {
+      const customer = await stripe.createCustomer({
+        email: owner.email,
+        name: owner.name,
+        metadata: { ownerId: String(owner.id) },
+      });
+      stripeCustomerId = customer.id;
+      store.update('owners', owner.id, { stripeCustomerId });
+    }
+
+    const origin = `${req.protocol}://${req.get('host')}`;
+    const session = await stripe.createSetupCheckoutSession({
+      customerId: stripeCustomerId,
+      successUrl: `${origin}/owner?autopay=success`,
+      cancelUrl: `${origin}/owner?autopay=cancelled`,
+      metadata: { ownerId: String(owner.id) },
+    });
+    res.json({ url: session.url });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// Turns autopay off and forgets the saved card. Detaching the PaymentMethod from
+// Stripe (not just clearing our own fields) is a best-effort courtesy so it also drops
+// off the owner's saved-cards list on Stripe's side — if that call fails for any reason
+// (already detached, network hiccup) autopay still gets turned off locally either way,
+// since that's the part that actually stops future charges.
+router.post('/autopay/cancel', async (req, res) => {
+  const owner = store.getById('owners', req.session.ownerId);
+  if (!owner) return res.status(404).json({ error: 'Owner not found' });
+
+  if (owner.stripePaymentMethodId && stripe.isConfigured()) {
+    try {
+      await stripe.detachPaymentMethod(owner.stripePaymentMethodId);
+    } catch (err) {
+      console.warn(`Could not detach payment method for owner #${owner.id}: ${err.message}`);
+    }
+  }
+
+  const updated = store.update('owners', owner.id, {
+    autopayEnabled: false,
+    stripePaymentMethodId: null,
+    autopayCardBrand: null,
+    autopayCardLast4: null,
+  });
+  res.json({ autopayEnabled: updated.autopayEnabled });
 });
 
 // ---- iCal calendar auto-sync (per property) ----

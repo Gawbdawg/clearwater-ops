@@ -227,6 +227,15 @@
             </label>
             <div id="newsletterToggleStatus" class="portal-sub" style="margin:0;"></div>
           </div>
+
+          <!-- Autopay: owner-wide (not per-property) — applies across all your properties'
+               invoices, whichever ones you have. -->
+          <div class="portal-card" style="max-width:none; margin:16px 0 0;">
+            <div style="font-size:14px; font-weight:600;">Autopay</div>
+            <div id="autopayStatus" class="portal-sub" style="margin:4px 0 8px;"></div>
+            <button class="btn primary" id="enableAutopayBtn">Turn on autopay</button>
+            <button class="btn small danger hidden" id="disableAutopayBtn">Turn off autopay</button>
+          </div>
         </div>
 
         <!-- Visits -->

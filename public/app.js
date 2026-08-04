@@ -597,6 +597,9 @@ function renderOwnerTable() {
       <td>${o.username || '—'}</td>
       <td>${o.propertyCount}</td>
       <td>${o.billingMode === 'monthly' ? '<span class="badge draft">Monthly</span>' : '<span class="badge scheduled">Per job</span>'}</td>
+      <td>${o.autopayEnabled
+        ? `<span class="badge completed">On${o.autopayCardLast4 ? ` · ${(o.autopayCardBrand || 'card').replace(/^\w/, (c) => c.toUpperCase())} ${o.autopayCardLast4}` : ''}</span>`
+        : '<span style="color:var(--text-faint); font-size:12px;">Off</span>'}</td>
       <td>${o.hasPassword ? '<span class="badge completed">Yes</span>' : '<span class="badge scheduled">Not set</span>'}</td>
       <td>
         ${o.billingMode === 'monthly' ? `<button class="btn small primary" onclick="generateMonthlyInvoice(${o.id}, '${o.name.replace(/'/g, "\\'")}')">Generate monthly invoice</button>` : ''}
@@ -605,7 +608,7 @@ function renderOwnerTable() {
         <button class="btn small danger" onclick="deleteOwner(${o.id})">Delete</button>
       </td>
     </tr>
-  `).join('') || `<tr><td colspan="9" class="empty-state">${
+  `).join('') || `<tr><td colspan="10" class="empty-state">${
     state.owners.length === 0
       ? 'No owner accounts yet. Create one from the Homes tab when editing a home.'
       : 'No owners match your search/filter.'

@@ -17,6 +17,7 @@ const logoutBtn = document.getElementById('logoutBtn');
 
 let properties = [];
 let selectedPropertyId = null;
+let currentOwner = null;
 let addonsCatalog = [];
 let selectedAddonIds = new Set();
 // Set right before a checkSession()/showDash() refresh triggered by adding or editing a
@@ -107,6 +108,10 @@ async function showDash(owner) {
   logoutBtn.style.display = '';
   document.getElementById('welcomeMsg').textContent = `Hi ${owner.name}`;
   document.getElementById('newsletterToggle').checked = owner.newsletterSubscribed !== false;
+
+  currentOwner = owner;
+  renderAutopayCard();
+  handleAutopayRedirect();
 
   properties = await api('/api/owner/properties');
   try {
@@ -1238,6 +1243,90 @@ document.getElementById('newsletterToggle').addEventListener('change', async (e)
     e.target.disabled = false;
   }
 });
+
+// ---- Autopay: save a card, get new invoices charged automatically instead of having
+// to pay each one by hand. Owner-wide, not per-property — set up once, applies to
+// every property's invoices. The actual charging happens server-side (lib/autopay.js)
+// whenever a new invoice is created; this is just the on/off switch + card display.
+function renderAutopayCard() {
+  const statusEl = document.getElementById('autopayStatus');
+  const enableBtn = document.getElementById('enableAutopayBtn');
+  const disableBtn = document.getElementById('disableAutopayBtn');
+  if (currentOwner.autopayEnabled) {
+    const brand = currentOwner.autopayCardBrand
+      ? currentOwner.autopayCardBrand.charAt(0).toUpperCase() + currentOwner.autopayCardBrand.slice(1)
+      : 'Card';
+    const cardDesc = currentOwner.autopayCardLast4 ? `${brand} ending in ${currentOwner.autopayCardLast4}` : 'a card on file';
+    statusEl.innerHTML = `<span style="color:#256b32;">✓ Autopay is on</span> — new invoices are automatically charged to ${cardDesc}. No need to pay them by hand.`;
+    enableBtn.classList.add('hidden');
+    disableBtn.classList.remove('hidden');
+  } else {
+    statusEl.textContent = "Save a card and we'll automatically charge each new invoice — no more remembering to pay manually.";
+    enableBtn.classList.remove('hidden');
+    disableBtn.classList.add('hidden');
+  }
+}
+
+document.getElementById('enableAutopayBtn').addEventListener('click', async () => {
+  const btn = document.getElementById('enableAutopayBtn');
+  btn.disabled = true;
+  try {
+    const result = await api('/api/owner/autopay/start', { method: 'POST' });
+    window.location.href = result.url;
+  } catch (e) {
+    alert(e.message || 'Could not start autopay setup.');
+    btn.disabled = false;
+  }
+});
+
+document.getElementById('disableAutopayBtn').addEventListener('click', async () => {
+  if (!confirm('Turn off autopay? Future invoices will go back to needing to be paid manually.')) return;
+  const btn = document.getElementById('disableAutopayBtn');
+  btn.disabled = true;
+  try {
+    await api('/api/owner/autopay/cancel', { method: 'POST' });
+    currentOwner.autopayEnabled = false;
+    currentOwner.autopayCardBrand = null;
+    currentOwner.autopayCardLast4 = null;
+    renderAutopayCard();
+  } catch (e) {
+    alert(e.message || 'Could not turn off autopay.');
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+// Stripe's hosted "save a card" page redirects back here with ?autopay=success or
+// ?autopay=cancelled. On success, the webhook that actually flips autopayEnabled to
+// true (routes/stripeWebhook.js) may not have landed yet by the time the owner's
+// browser gets back here — so this polls /api/owner-auth/me a few times rather than
+// just trusting the redirect happened, which would show "off" for a few seconds even
+// though it's about to turn on.
+function handleAutopayRedirect() {
+  const params = new URLSearchParams(window.location.search);
+  const result = params.get('autopay');
+  if (!result) return;
+  window.history.replaceState({}, '', window.location.pathname);
+  if (result === 'success') {
+    document.getElementById('autopayStatus').textContent = 'Finishing setup — this can take a few seconds…';
+    pollForAutopayCompletion(6);
+  }
+}
+
+async function pollForAutopayCompletion(attemptsLeft) {
+  if (attemptsLeft <= 0) return;
+  try {
+    const owner = await api('/api/owner-auth/me');
+    currentOwner.autopayEnabled = owner.autopayEnabled;
+    currentOwner.autopayCardBrand = owner.autopayCardBrand;
+    currentOwner.autopayCardLast4 = owner.autopayCardLast4;
+    renderAutopayCard();
+    if (owner.autopayEnabled) return;
+  } catch (e) {
+    // keep polling — a transient failure here shouldn't give up on showing the final state
+  }
+  setTimeout(() => pollForAutopayCompletion(attemptsLeft - 1), 1500);
+}
 
 // ---- Repair properties: opt out of routine maintenance service ----
 document.getElementById('maintenanceOptOutToggle').addEventListener('change', async (e) => {
