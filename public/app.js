@@ -230,12 +230,13 @@ function customerForm(c = {}) {
     </label>
     <label>Phone<input id="f_phone" value="${c.phone || ''}" /></label>
     <label>Email<input id="f_email" value="${c.email || ''}" /></label>
-    <label>Address<input id="f_address" value="${c.address || ''}" onblur="verifyAddressField()" /></label>
+    <label>Address (required)<input id="f_address" value="${c.address || ''}" onblur="verifyAddressField()" /></label>
     <div id="addressVerifyStatus" class="portal-sub" style="margin:-6px 0 0;">${
       c.address && c.lat != null && c.lng != null
         ? `✓ Located: ${c.geocodedAddress || c.address}`
         : ''
     }</div>
+    <div id="addressMap" class="hidden" style="height:200px; border-radius:8px; margin:0 0 4px; overflow:hidden;"></div>
     <label>Service frequency
       <select id="f_serviceFrequency" onchange="onServiceFrequencyChange()">
         <option value="" ${!c.serviceFrequency ? 'selected' : ''}>Not set</option>
@@ -306,11 +307,44 @@ function customerForm(c = {}) {
 
 let lastVerifiedAddress = null; // avoids re-hitting the geocoder if the field didn't actually change
 
+// Unlike the owner portal's map containers (static elements in owner.html, reused
+// across checks), this modal's entire body gets replaced via innerHTML every time it
+// opens (see openModal) — so any previous Leaflet instance is left pointing at a DOM
+// node that's already gone. Simplest safe fix: always tear down and recreate rather
+// than trying to reuse one across opens.
+let addressMapInstance = null;
+
+const OSM_TILE_URL = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+const OSM_ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors';
+
+function showAddressMap(lat, lng, label) {
+  const container = document.getElementById('addressMap');
+  if (!container) return;
+  container.classList.remove('hidden');
+  if (addressMapInstance) {
+    try { addressMapInstance.remove(); } catch (e) { /* container already gone — fine */ }
+    addressMapInstance = null;
+  }
+  addressMapInstance = L.map('addressMap').setView([lat, lng], 16);
+  L.tileLayer(OSM_TILE_URL, { maxZoom: 19, attribution: OSM_ATTRIBUTION }).addTo(addressMapInstance);
+  L.marker([lat, lng]).addTo(addressMapInstance).bindPopup(label || '');
+  setTimeout(() => addressMapInstance && addressMapInstance.invalidateSize(), 0);
+}
+
+function hideAddressMap() {
+  if (addressMapInstance) {
+    try { addressMapInstance.remove(); } catch (e) { /* already gone */ }
+    addressMapInstance = null;
+  }
+  const container = document.getElementById('addressMap');
+  if (container) container.classList.add('hidden');
+}
+
 window.verifyAddressField = async () => {
   const input = document.getElementById('f_address');
   const statusEl = document.getElementById('addressVerifyStatus');
   const address = input.value.trim();
-  if (!address) { statusEl.textContent = ''; lastVerifiedAddress = null; return; }
+  if (!address) { statusEl.textContent = ''; lastVerifiedAddress = null; hideAddressMap(); return; }
   if (address === lastVerifiedAddress) return;
   statusEl.textContent = 'Checking address…';
   try {
@@ -318,11 +352,14 @@ window.verifyAddressField = async () => {
     lastVerifiedAddress = address;
     if (result.found) {
       statusEl.innerHTML = `<span style="color:#256b32;">✓ Found: ${result.displayName}</span>`;
+      showAddressMap(result.lat, result.lng, result.displayName);
     } else {
-      statusEl.innerHTML = `<span style="color:#a3382f;">⚠ Couldn't find this address on the map — double check for typos. Saving will be blocked until it's found.</span>`;
+      statusEl.innerHTML = `<span style="color:#a3382f;">⚠ Couldn't find this address on the map — double check for typos. An address is required, and saving will be blocked until it's found.</span>`;
+      hideAddressMap();
     }
   } catch (e) {
     statusEl.textContent = '';
+    hideAddressMap();
   }
 };
 
@@ -342,6 +379,8 @@ function wireOwnerSelectToggle() {
 document.getElementById('newCustomerBtn').addEventListener('click', async () => {
   if (state.services.length === 0) state.services = await api('/api/services');
   openModal('New Home', customerForm());
+  addressMapInstance = null; // previous modal's map (if any) was on a DOM node that's now gone
+  lastVerifiedAddress = null;
   wireOwnerSelectToggle();
   document.getElementById('saveCustomerBtn').addEventListener('click', async () => {
     try {
@@ -401,6 +440,13 @@ window.editCustomer = async (id) => {
   if (state.services.length === 0) state.services = await api('/api/services');
   const c = state.customers.find((x) => x.id === id);
   openModal('Edit Home', customerForm(c));
+  addressMapInstance = null; // previous modal's map (if any) was on a DOM node that's now gone
+  if (c.lat != null && c.lng != null) {
+    lastVerifiedAddress = c.address || null;
+    showAddressMap(c.lat, c.lng, c.geocodedAddress || c.address);
+  } else {
+    lastVerifiedAddress = null;
+  }
   wireOwnerSelectToggle();
   document.getElementById('saveCustomerBtn').addEventListener('click', async () => {
     try {

@@ -221,8 +221,17 @@ document.getElementById('editPropertyBtn').addEventListener('click', () => {
   document.getElementById('epAddress').value = p.address || '';
   document.getElementById('epType').value = ['vacation', 'repair'].includes(p.type) ? p.type : 'residential';
   document.getElementById('editPropertyError').classList.add('hidden');
-  document.getElementById('epAddressVerifyStatus').textContent = '';
-  lastVerifiedPropertyAddress.epAddress = null;
+  // Already-located property: show its existing pin right away and don't force a
+  // needless re-check unless the owner actually edits the address field.
+  if (p.lat != null && p.lng != null) {
+    document.getElementById('epAddressVerifyStatus').innerHTML = `<span style="color:#256b32;">✓ Located: ${p.geocodedAddress || p.address}</span>`;
+    lastVerifiedPropertyAddress.epAddress = p.address || null;
+    showAddressMap('epAddressMap', p.lat, p.lng, p.geocodedAddress || p.address);
+  } else {
+    document.getElementById('epAddressVerifyStatus').textContent = '';
+    lastVerifiedPropertyAddress.epAddress = null;
+    hideAddressMap('epAddressMap');
+  }
   document.getElementById('propertyDetailsView').classList.add('hidden');
   document.getElementById('editPropertyForm').classList.remove('hidden');
 });
@@ -241,6 +250,11 @@ document.getElementById('saveEditPropertyBtn').addEventListener('click', async (
     return;
   }
   const address = document.getElementById('epAddress').value.trim();
+  if (!address) {
+    errEl.textContent = 'An address is required so we can find your property on the map.';
+    errEl.classList.remove('hidden');
+    return;
+  }
   const type = document.getElementById('epType').value;
   const btn = document.getElementById('saveEditPropertyBtn');
   btn.disabled = true;
@@ -1355,15 +1369,58 @@ document.getElementById('maintenanceOptOutToggle').addEventListener('change', as
 // ---- Live address check for the add/edit property forms ----
 // Same purpose as verifyAddressField in the admin's app.js: a heads-up as the owner
 // types, before they hit Save. The actual save is what really enforces this
-// (see POST/PUT /api/owner/properties in routes/ownerPortal.js) — an address the map
-// can't find is rejected there regardless of whether this check ran at all.
+// (see POST/PUT /api/owner/properties in routes/ownerPortal.js) — an address is
+// required, and one the map can't find is rejected there regardless of whether this
+// check ran at all.
 const lastVerifiedPropertyAddress = {};
+
+// One Leaflet map instance per container, reused across checks instead of recreated
+// each time (Leaflet doesn't like being initialized twice on the same element) — just
+// re-centered and the marker moved when the address changes.
+const propertyAddressMaps = {};
+
+const OSM_TILE_URL = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+const OSM_ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors';
+
+// Shows (or updates) a small map with a pin at the given coordinates so the owner can
+// visually confirm "yes, that's my property" before saving — not just trust a text
+// match. The container starts hidden (class="hidden" in owner.html) since Leaflet
+// can't size itself correctly inside a display:none element; invalidateSize() after
+// un-hiding fixes the "gray tiles" issue that otherwise happens.
+function showAddressMap(containerId, lat, lng, label) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  container.classList.remove('hidden');
+  let map = propertyAddressMaps[containerId];
+  if (!map) {
+    map = L.map(containerId).setView([lat, lng], 16);
+    L.tileLayer(OSM_TILE_URL, { maxZoom: 19, attribution: OSM_ATTRIBUTION }).addTo(map);
+    map.__marker = L.marker([lat, lng]).addTo(map);
+    propertyAddressMaps[containerId] = map;
+  } else {
+    map.setView([lat, lng], 16);
+    map.__marker.setLatLng([lat, lng]);
+  }
+  if (label) map.__marker.bindPopup(label);
+  setTimeout(() => map.invalidateSize(), 0);
+}
+
+function hideAddressMap(containerId) {
+  const container = document.getElementById(containerId);
+  if (container) container.classList.add('hidden');
+}
 
 async function checkPropertyAddressField(inputId, statusId) {
   const input = document.getElementById(inputId);
   const statusEl = document.getElementById(statusId);
+  const mapId = inputId === 'apAddress' ? 'apAddressMap' : 'epAddressMap';
   const address = input.value.trim();
-  if (!address) { statusEl.textContent = ''; lastVerifiedPropertyAddress[inputId] = null; return; }
+  if (!address) {
+    statusEl.textContent = '';
+    lastVerifiedPropertyAddress[inputId] = null;
+    hideAddressMap(mapId);
+    return;
+  }
   if (address === lastVerifiedPropertyAddress[inputId]) return;
   statusEl.textContent = 'Checking address…';
   try {
@@ -1371,11 +1428,14 @@ async function checkPropertyAddressField(inputId, statusId) {
     lastVerifiedPropertyAddress[inputId] = address;
     if (result.found) {
       statusEl.innerHTML = `<span style="color:#256b32;">✓ Found: ${result.displayName}</span>`;
+      showAddressMap(mapId, result.lat, result.lng, result.displayName);
     } else {
-      statusEl.innerHTML = `<span style="color:#a3382f;">⚠ Couldn't find this address on the map — double check for typos. Saving will be blocked until it's found.</span>`;
+      statusEl.innerHTML = `<span style="color:#a3382f;">⚠ Couldn't find this address on the map — double check for typos. An address is required, and saving will be blocked until it's found.</span>`;
+      hideAddressMap(mapId);
     }
   } catch (e) {
     statusEl.textContent = '';
+    hideAddressMap(mapId);
   }
 }
 
@@ -1388,6 +1448,7 @@ document.getElementById('showAddPropertyBtn').addEventListener('click', () => {
   document.getElementById('addPropertyForm').classList.remove('hidden');
   document.getElementById('apAddressVerifyStatus').textContent = '';
   lastVerifiedPropertyAddress.apAddress = null;
+  hideAddressMap('apAddressMap');
 });
 
 document.getElementById('cancelAddPropertyBtn').addEventListener('click', () => {
@@ -1407,6 +1468,11 @@ document.getElementById('saveNewPropertyBtn').addEventListener('click', async ()
     errEl.classList.remove('hidden');
     return;
   }
+  if (!address) {
+    errEl.textContent = 'An address is required so we can find your property on the map.';
+    errEl.classList.remove('hidden');
+    return;
+  }
   const btn = document.getElementById('saveNewPropertyBtn');
   btn.disabled = true;
   try {
@@ -1414,6 +1480,7 @@ document.getElementById('saveNewPropertyBtn').addEventListener('click', async ()
     document.getElementById('apName').value = '';
     document.getElementById('apAddress').value = '';
     document.getElementById('apType').value = 'residential';
+    hideAddressMap('apAddressMap');
     // Select the property just created (rather than always defaulting to properties[0])
     // so a newly-added vacation property's Booking calendar tab — and the iCal field on
     // it — shows up immediately, with no extra manual switch required.

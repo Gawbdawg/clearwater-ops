@@ -135,19 +135,14 @@ router.post('/verify-address', async (req, res) => {
 // Geocodes an address a home is being saved with (new home, or an existing home's
 // address being changed) and requires it to actually be found — a home the geocoder
 // can't locate never gets saved with that address at all, rather than being saved
-// anyway with a "not located" badge for someone to notice later. An address left
-// blank is still allowed (that's "no address on file yet," a different thing from
-// "an address that doesn't check out"). Throws on failure; callers turn that into a
-// 400 rather than swallowing it. Sets the same lat/lng/geocodedAddress/addressVerified
-// fields onto `updates` on success that the rest of the app already expects.
+// anyway with a "not located" badge for someone to notice later. An address is now
+// required outright (a technician needs somewhere real to be routed to), so a blank
+// address is rejected the same as an unfindable one — see the callers below, which
+// check for a blank address before ever calling this. Throws on failure; callers turn
+// that into a 400 rather than swallowing it. Sets the same
+// lat/lng/geocodedAddress/addressVerified fields onto `updates` on success that the
+// rest of the app already expects.
 async function geocodeOrThrow(address, updates) {
-  if (!address || !address.trim()) {
-    updates.lat = null;
-    updates.lng = null;
-    updates.geocodedAddress = '';
-    updates.addressVerified = false;
-    return;
-  }
   const { lat, lng, displayName } = await geocodeAddress(address);
   updates.lat = lat;
   updates.lng = lng;
@@ -174,6 +169,9 @@ router.post('/', async (req, res) => {
     serviceFrequency, customFrequencyDays, customPricing,
   } = req.body;
   if (!name) return res.status(400).json({ error: 'Name is required' });
+  if (!address || !address.trim()) {
+    return res.status(400).json({ error: 'An address is required — every home needs a located address on file so a tech can actually be routed there.' });
+  }
 
   let resolvedOwnerId = ownerId ? Number(ownerId) : null;
   if (newOwner && newOwner.username) {
@@ -233,18 +231,26 @@ router.put('/:id', async (req, res) => {
     updates.customPricing = cleanCustomPricing(updates.customPricing);
   }
 
-  // Address changed — re-geocode right away and reject the save if it can't be found,
-  // rather than saving a typo/bad address with a "not located" badge for someone to
-  // notice later (or worse, a tech getting routed to the wrong place). Only checked
-  // when the address is actually being changed here — an existing home with an
-  // already-bad address on file isn't retroactively blocked from an unrelated edit
-  // (phone number, notes, etc.); that cleanup path is Settings → "Geocode all addresses".
+  // Address is required, and re-geocoded right away whenever it's actually being
+  // changed here — rather than saving a typo/bad address with a "not located" badge
+  // for someone to notice later (or worse, a tech getting routed to the wrong place).
+  // A blank address is rejected outright now too, even on a home that already had one
+  // (no more clearing it back out to blank). Only checked when the address field is
+  // actually present in this edit — an existing home with an already-bad address on
+  // file isn't retroactively blocked from an unrelated edit (phone number, notes,
+  // etc.) that doesn't touch the address at all; that cleanup path is Settings →
+  // "Geocode all addresses".
   const existing = store.getById('customers', req.params.id);
-  if (existing && updates.address !== undefined && updates.address !== existing.address) {
-    try {
-      await geocodeOrThrow(updates.address, updates);
-    } catch (err) {
-      return res.status(400).json({ error: `Couldn't find that address on the map (${err.message}) — double check it for typos and try again.` });
+  if (updates.address !== undefined) {
+    if (!updates.address || !updates.address.trim()) {
+      return res.status(400).json({ error: 'An address is required — every home needs a located address on file so a tech can actually be routed there.' });
+    }
+    if (!existing || updates.address !== existing.address) {
+      try {
+        await geocodeOrThrow(updates.address, updates);
+      } catch (err) {
+        return res.status(400).json({ error: `Couldn't find that address on the map (${err.message}) — double check it for typos and try again.` });
+      }
     }
   }
 
