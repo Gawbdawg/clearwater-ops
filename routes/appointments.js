@@ -248,12 +248,22 @@ router.post('/dedupe', (req, res) => {
 // Assigns every appointment on a given date to one technician in one click — meant for
 // days that were bulk-imported (or otherwise created) without a technician picked yet,
 // so "who's working this day" can be decided later without editing each stop by hand.
+// Reassigns either every appointment on a given day (the original behavior — just pass
+// `date`), or a specific hand-picked subset of that day's appointments (pass
+// `appointmentIds`, e.g. from checkboxes in the day-detail modal) — lets an admin split
+// one day's jobs across two techs instead of it being all-or-nothing.
 router.post('/bulk-assign-technician', (req, res) => {
-  const { date, technicianId } = req.body;
-  if (!date) return res.status(400).json({ error: 'Date is required' });
+  const { date, technicianId, appointmentIds } = req.body;
+  if (!date && !(Array.isArray(appointmentIds) && appointmentIds.length)) {
+    return res.status(400).json({ error: 'Date (or a list of appointmentIds) is required' });
+  }
   const tech = technicianId ? store.getById('technicians', technicianId) : null;
   if (technicianId && !tech) return res.status(400).json({ error: 'Technician not found' });
-  const appts = store.getAll('appointments').filter((a) => a.date === date);
+
+  const appts = Array.isArray(appointmentIds) && appointmentIds.length
+    ? appointmentIds.map((id) => store.getById('appointments', id)).filter(Boolean)
+    : store.getAll('appointments').filter((a) => a.date === date);
+
   appts.forEach((a) => store.update('appointments', a.id, { technicianId: tech ? tech.id : null }));
   res.json({ date, count: appts.length, technicianName: tech ? tech.name : 'Unassigned' });
 });

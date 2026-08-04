@@ -1251,16 +1251,23 @@ window.openDayDetail = (dateStr) => {
   const niceDate = new Date(dateStr + 'T00:00:00').toLocaleDateString(undefined, {
     weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
   });
+  // Each job gets its own checkbox so a handful of them can be picked out and assigned
+  // to a tech together — e.g. splitting one day's jobs across two techs — instead of it
+  // being all-or-nothing. Leaving everything unchecked and hitting Assign still assigns
+  // the whole day, same as before.
   const list = appts.length
     ? appts.map((a) => `
         <div class="appt-card">
-          <div>
-            <strong>${a.customerName}</strong>
-            <div class="meta">${a.serviceType} · Tech: ${a.technicianName}</div>
-            ${(a.chlorine || a.ph || a.alkalinity) ? `<div class="meta">Chemistry: ${[a.chlorine && 'Cl ' + a.chlorine, a.ph && 'pH ' + a.ph, a.alkalinity && 'Alk ' + a.alkalinity].filter(Boolean).join(' · ')}</div>` : ''}
-            ${a.reminderSentAt ? `<div class="meta">Reminder texted ✓</div>` : ''}
-            ${a.reviewRequestSentAt ? `<div class="meta">Review requested ✓</div>` : ''}
-            ${apptPhotosThumbs(a)}
+          <div style="display:flex; align-items:flex-start; gap:10px;">
+            <input type="checkbox" class="day-detail-check" value="${a.id}" onchange="updateDayAssignBar()" style="margin-top:3px;" />
+            <div>
+              <strong>${a.customerName}</strong>
+              <div class="meta">${a.serviceType} · Tech: ${a.technicianName}</div>
+              ${(a.chlorine || a.ph || a.alkalinity) ? `<div class="meta">Chemistry: ${[a.chlorine && 'Cl ' + a.chlorine, a.ph && 'pH ' + a.ph, a.alkalinity && 'Alk ' + a.alkalinity].filter(Boolean).join(' · ')}</div>` : ''}
+              ${a.reminderSentAt ? `<div class="meta">Reminder texted ✓</div>` : ''}
+              ${a.reviewRequestSentAt ? `<div class="meta">Review requested ✓</div>` : ''}
+              ${apptPhotosThumbs(a)}
+            </div>
           </div>
           <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
             <span class="badge ${a.status}">${a.status}</span>
@@ -1274,10 +1281,17 @@ window.openDayDetail = (dateStr) => {
     : '<div class="empty-state">No appointments this day.</div>';
   const techOptions = state.technicians.map((t) => `<option value="${t.id}">${t.name}</option>`).join('');
   openModal(niceDate, `
+    ${appts.length > 1 ? `
+      <div style="margin-bottom:6px;">
+        <label style="flex-direction:row; align-items:center; gap:6px; font-size:12.5px; color:#46606b;">
+          <input type="checkbox" id="dayDetailSelectAll" onchange="toggleAllDayDetail(this)" /> Select all
+        </label>
+      </div>
+    ` : ''}
     <div class="day-detail-list">${list}</div>
     ${appts.length ? `
-      <div style="display:flex; align-items:center; gap:8px; border-top:1px solid #eef1f2; padding-top:12px;">
-        <span style="font-size:13px; color:#46606b;">Assign this whole day to:</span>
+      <div style="display:flex; align-items:center; gap:8px; border-top:1px solid #eef1f2; padding-top:12px; flex-wrap:wrap;">
+        <span id="dayAssignLabel" style="font-size:13px; color:#46606b;">Assign this whole day to:</span>
         <select id="dayAssignTechSelect" style="flex:1;">
           <option value="">Unassigned</option>
           ${techOptions}
@@ -1291,12 +1305,33 @@ window.openDayDetail = (dateStr) => {
   `);
 };
 
+// Flips the "Assign this whole day to" label/behavior over to "Assign N selected to"
+// as soon as one or more checkboxes are checked — no separate button/control needed,
+// the same Assign button just acts on the selection instead of the whole day.
+window.updateDayAssignBar = () => {
+  const checked = document.querySelectorAll('.day-detail-check:checked');
+  const label = document.getElementById('dayAssignLabel');
+  if (!label) return;
+  label.textContent = checked.length > 0
+    ? `Assign ${checked.length} selected to:`
+    : 'Assign this whole day to:';
+  const selectAll = document.getElementById('dayDetailSelectAll');
+  const all = document.querySelectorAll('.day-detail-check');
+  if (selectAll) selectAll.checked = all.length > 0 && checked.length === all.length;
+};
+
+window.toggleAllDayDetail = (selectAllCheckbox) => {
+  document.querySelectorAll('.day-detail-check').forEach((cb) => { cb.checked = selectAllCheckbox.checked; });
+  updateDayAssignBar();
+};
+
 window.assignDayToTechnician = async (dateStr) => {
   const technicianId = document.getElementById('dayAssignTechSelect').value || null;
+  const selectedIds = Array.from(document.querySelectorAll('.day-detail-check:checked')).map((cb) => Number(cb.value));
   try {
     const result = await api('/api/appointments/bulk-assign-technician', {
       method: 'POST',
-      body: JSON.stringify({ date: dateStr, technicianId }),
+      body: JSON.stringify(selectedIds.length ? { date: dateStr, technicianId, appointmentIds: selectedIds } : { date: dateStr, technicianId }),
     });
     await loadAppointments();
     openDayDetail(dateStr);
