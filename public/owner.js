@@ -51,7 +51,19 @@ async function checkSession() {
     termsView.classList.add('hidden');
     dashView.classList.add('hidden');
     logoutBtn.style.display = 'none';
+    maybeOpenSignupFromLink();
   }
+}
+
+// Lands someone straight on the sign-up form (with their email prefilled) when they
+// arrive via the "no account found" email's link — i.e. /owner.html?signup=1&email=...
+// See routes/ownerAuth.js's /request-code handler, which builds that link.
+function maybeOpenSignupFromLink() {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('signup') !== '1') return;
+  document.getElementById('showSignupBtn').click();
+  const email = params.get('email');
+  if (email) document.getElementById('signupEmail').value = email;
 }
 
 // Routes a just-logged-in (or session-restored) owner to the Terms of Service gate if
