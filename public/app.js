@@ -81,9 +81,32 @@ document.getElementById('copyTextBtn').addEventListener('click', () => {
 });
 
 // ---------- Dashboard ----------
+// Small always-visible notice for new owner self-signups in the last 7 days — shows up
+// on the Dashboard every time the admin opens the app, regardless of whether a
+// notification email is configured (see Settings → New account notifications).
+async function loadNewSignupsNotice() {
+  const el = document.getElementById('newSignupsNotice');
+  if (!el) return;
+  const owners = await api('/api/owners');
+  state.owners = owners;
+  const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  const recent = owners.filter((o) => o.signupSource === 'self' && o.createdAt && new Date(o.createdAt).getTime() >= cutoff);
+  if (recent.length === 0) {
+    el.classList.add('hidden');
+    return;
+  }
+  el.classList.remove('hidden');
+  el.innerHTML = `
+    <strong>${recent.length} new owner sign-up${recent.length === 1 ? '' : 's'}</strong> in the last 7 days:
+    ${recent.map((o) => o.name).join(', ')}
+    — <a href="#" onclick="document.querySelector('[data-tab=owners]').click(); return false;">view in Owners</a>
+  `;
+}
+
 async function loadDashboard() {
   document.getElementById('todayDate').textContent = todayStr();
   const [appts] = await Promise.all([api('/api/appointments?date=' + todayStr())]);
+  loadNewSignupsNotice();
   const list = document.getElementById('todayList');
   if (appts.length === 0) {
     list.innerHTML = '<div class="empty-state">No appointments scheduled for today.</div>';
@@ -664,6 +687,17 @@ function niceDateShort(dateStr) {
   return new Date(dateStr + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
+// A "New sign-up" badge for owners who created their OWN account through the owner
+// portal's sign-up page in the last 3 days (see signupSource in routes/ownerAuth.js) —
+// owners the admin created themselves (Owners tab, bulk-link tool) never get this,
+// since the admin already knows about those.
+function recentSelfSignupBadge(o) {
+  if (o.signupSource !== 'self' || !o.createdAt) return '';
+  const ageMs = Date.now() - new Date(o.createdAt).getTime();
+  if (ageMs > 3 * 24 * 60 * 60 * 1000) return '';
+  return '<span class="badge sent" title="Created their own account via the owner portal sign-up page">New sign-up</span>';
+}
+
 // ---------- Owners ----------
 async function loadOwners() {
   state.owners = await api('/api/owners');
@@ -684,7 +718,7 @@ function renderOwnerTable() {
   const tbody = document.querySelector('#ownerTable tbody');
   tbody.innerHTML = owners.map((o) => `
     <tr>
-      <td>${o.name}</td>
+      <td>${o.name} ${recentSelfSignupBadge(o)}</td>
       <td>${ownerTypeBadges(o.propertyTypes)}</td>
       <td>${o.phone || ''}</td>
       <td>${o.email || ''}</td>
@@ -2410,6 +2444,7 @@ async function loadSettingsTab() {
     state.services.length === 0 ? api('/api/services').then((s) => { state.services = s; }) : Promise.resolve(),
   ]);
   document.getElementById('googleReviewUrlInput').value = settings.googleReviewUrl || '';
+  document.getElementById('notificationEmailInput').value = settings.notificationEmail || '';
   document.getElementById('depotAddressInput').value = settings.depotAddress || '';
   document.getElementById('depotStatus').textContent =
     typeof settings.depotLat === 'number'
@@ -2745,6 +2780,21 @@ document.getElementById('dedupeAppointmentsBtn').addEventListener('click', async
     loadAppointments();
   } catch (e) {
     alert('Could not clean up: ' + e.message);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+document.getElementById('saveNotificationEmailBtn').addEventListener('click', async () => {
+  const statusEl = document.getElementById('notificationEmailStatus');
+  const btn = document.getElementById('saveNotificationEmailBtn');
+  const notificationEmail = document.getElementById('notificationEmailInput').value.trim();
+  btn.disabled = true;
+  try {
+    await api('/api/settings', { method: 'PUT', body: JSON.stringify({ notificationEmail }) });
+    statusEl.textContent = notificationEmail ? 'Saved ✓' : 'Cleared — new-account notifications are off.';
+  } catch (e) {
+    statusEl.textContent = `Could not save: ${e.message}`;
   } finally {
     btn.disabled = false;
   }

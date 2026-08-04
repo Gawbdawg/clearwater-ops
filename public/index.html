@@ -117,6 +117,7 @@
         <div class="panel-header">
           <h1>Today — <span id="todayDate"></span></h1>
         </div>
+        <div id="newSignupsNotice" class="portal-hint hidden" style="background:#eef7f0; border-color:#bfe3c8; padding:10px 14px; border-radius:8px; margin-bottom:14px;"></div>
         <div id="todayList" class="card-list"></div>
       </section>
 
@@ -395,6 +396,16 @@
       <section id="tab-settings" class="tab-panel">
         <div class="panel-header">
           <h1>Settings</h1>
+        </div>
+
+        <div class="portal-card" style="max-width:520px; margin:0 0 24px;">
+          <div style="font-size:14px; font-weight:600;">New account notifications</div>
+          <p class="portal-sub" style="margin:0;">Get an email whenever someone creates their own owner account through the "sign up" link on the owner portal (accounts you create yourself in the Owners tab don't send a notification — you already know about those).</p>
+          <label>Notify this email<input type="email" id="notificationEmailInput" placeholder="you@example.com" /></label>
+          <div id="notificationEmailStatus" class="portal-sub" style="margin:0;"></div>
+          <div style="display:flex; gap:8px;">
+            <button class="btn primary" id="saveNotificationEmailBtn">Save</button>
+          </div>
         </div>
 
         <div class="portal-card" style="max-width:520px; margin:0 0 24px;">

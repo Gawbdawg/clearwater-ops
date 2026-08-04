@@ -2,6 +2,7 @@ const express = require('express');
 const store = require('../lib/store');
 const { checkPassword, hashPassword, sanitizeOwner, requireAdminAuth } = require('../lib/auth');
 const { requestLoginCode, verifyLoginCode } = require('../lib/emailLogin');
+const { notifyAdminNewAccount } = require('../lib/notifications');
 const router = express.Router();
 
 // Lets a brand-new property owner create their own account instead of waiting on the
@@ -50,8 +51,13 @@ router.post('/signup', (req, res) => {
     newsletterSubscribed: true,
     agreedToTerms: false,
     agreedToTermsAt: null,
+    // Distinguishes this from an owner the admin created themselves (Owners tab,
+    // bulk-link tool) — used to decide who gets a "New sign-up" badge and whether a
+    // new-account notification fires. See lib/notifications.js.
+    signupSource: 'self',
   });
   req.session.ownerId = owner.id;
+  notifyAdminNewAccount({ type: 'owner', name: owner.name, email: owner.email, phone: owner.phone });
   res.status(201).json(sanitizeOwner(owner));
 });
 

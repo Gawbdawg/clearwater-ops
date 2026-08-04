@@ -18,6 +18,9 @@ router.put('/', (req, res) => {
   if (req.body.googleReviewUrl !== undefined) {
     updates.googleReviewUrl = req.body.googleReviewUrl;
   }
+  if (req.body.notificationEmail !== undefined) {
+    updates.notificationEmail = req.body.notificationEmail;
+  }
   // The service to bill against when a completed job was never linked to a specific
   // one and there's no prior job for that customer to infer it from — e.g. auto-
   // scheduled vacation-rental turnover cleanings (lib/turnoverSchedule.js) or bulk
