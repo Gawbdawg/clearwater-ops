@@ -88,7 +88,11 @@ router.get('/briefing', async (req, res) => {
     .filter((r) => myPropertyIds.includes(r.customerId) && r.status === 'pending').length;
 
   const balanceDue = store.getAll('invoices')
-    .filter((i) => (i.ownerId === owner.id || myPropertyIds.includes(i.customerId)) && i.status !== 'paid' && i.status !== 'draft')
+    // status:'bundled' invoices are excluded here — they've been rolled up into a
+    // combined monthly invoice (see lib/monthlyInvoice.js) and would otherwise be
+    // double-counted alongside that combined invoice's own amount.
+    .filter((i) => (i.ownerId === owner.id || myPropertyIds.includes(i.customerId))
+      && i.status !== 'paid' && i.status !== 'draft' && i.status !== 'bundled')
     .reduce((sum, i) => sum + Number(i.amount || 0), 0);
 
   let lastVisitSummary = null;

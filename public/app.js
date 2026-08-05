@@ -1054,7 +1054,7 @@ function renderOwnerTable() {
       <td>${o.email || ''}</td>
       <td>${o.username || '—'}</td>
       <td>${o.propertyCount}</td>
-      <td>${o.billingMode === 'monthly' ? '<span class="badge draft">Monthly</span>' : '<span class="badge scheduled">Per job</span>'}</td>
+      <td>${o.billingMode === 'monthly' ? `<span class="badge draft">Monthly${o.monthlyBundleScope === 'property' ? ' — per house' : ''}</span>` : '<span class="badge scheduled">Per job</span>'}</td>
       <td>${o.autopayEnabled
         ? `<span class="badge completed">On${o.autopayCardLast4 ? ` · ${(o.autopayCardBrand || 'card').replace(/^\w/, (c) => c.toUpperCase())} ${o.autopayCardLast4}` : ''}</span>`
         : '<span style="color:var(--text-faint); font-size:12px;">Off</span>'}</td>
@@ -1102,9 +1102,16 @@ function ownerForm(o = {}) {
     <label>Username<input id="f_ousername" value="${o.username || ''}" autocomplete="off" /></label>
     <label>Password ${o.id ? '<span style="font-weight:400;">(leave blank to keep current)</span>' : ''}<input type="password" id="f_opassword" autocomplete="new-password" /></label>
     <label>Billing
-      <select id="f_obillingMode">
+      <select id="f_obillingMode" onchange="window.toggleOwnerBundleScope()">
         <option value="perJob" ${o.billingMode !== 'monthly' ? 'selected' : ''}>Per job (invoice as each visit is completed)</option>
         <option value="monthly" ${o.billingMode === 'monthly' ? 'selected' : ''}>Monthly combined (still invoices each visit individually — use "Generate monthly invoice" to bundle them into one bill at month end)</option>
+      </select>
+    </label>
+    <label id="f_obundleScopeWrap" class="${o.billingMode === 'monthly' ? '' : 'hidden'}">
+      Monthly billing — one invoice per…
+      <select id="f_obundleScope">
+        <option value="owner" ${o.monthlyBundleScope !== 'property' ? 'selected' : ''}>Owner (every property bundled into one combined bill)</option>
+        <option value="property" ${o.monthlyBundleScope === 'property' ? 'selected' : ''}>Property (each house gets its own monthly bill)</option>
       </select>
     </label>
     <label style="flex-direction:row; align-items:center; gap:8px;">
@@ -1125,6 +1132,14 @@ function ownerForm(o = {}) {
   `;
 }
 
+// Shows the "one invoice per owner / per property" choice only when Monthly combined
+// billing is selected — it's meaningless under per-job billing, where there's no
+// bundling step to scope in the first place.
+window.toggleOwnerBundleScope = () => {
+  const monthly = document.getElementById('f_obillingMode').value === 'monthly';
+  document.getElementById('f_obundleScopeWrap').classList.toggle('hidden', !monthly);
+};
+
 function readOwnerForm() {
   const customPricing = {};
   state.services.forEach((s) => {
@@ -1138,6 +1153,7 @@ function readOwnerForm() {
     username: document.getElementById('f_ousername').value,
     password: document.getElementById('f_opassword').value,
     billingMode: document.getElementById('f_obillingMode').value,
+    monthlyBundleScope: document.getElementById('f_obundleScope').value,
     newsletterSubscribed: document.getElementById('f_onewsletter').checked,
     customPricing,
   };
@@ -1172,14 +1188,23 @@ window.editOwner = async (id) => {
 
 window.generateMonthlyInvoice = async (ownerId, ownerName) => {
   const defaultMonth = todayStr().slice(0, 7);
-  const month = prompt(`Generate a combined invoice for ${ownerName} — which month? (YYYY-MM)`, defaultMonth);
+  const month = prompt(`Generate this month's invoice(s) for ${ownerName} — which month? (YYYY-MM)`, defaultMonth);
   if (!month) return;
   try {
     const result = await api(`/api/owners/${ownerId}/generate-monthly-invoice`, {
       method: 'POST', body: JSON.stringify({ month }),
     });
     if (result.created) {
-      alert(`Created a combined invoice for ${money(result.invoice.amount)}.`);
+      // Always an array now — 1 item for the normal "everything combined" scope, 0-N
+      // for "one bill per property" (a property with nothing to bill that month is
+      // just skipped, not billed $0), see lib/monthlyInvoice.js.
+      const invoices = result.invoices;
+      if (invoices.length === 1) {
+        alert(`Created a combined invoice for ${money(invoices[0].amount)}.`);
+      } else {
+        const total = invoices.reduce((sum, inv) => sum + Number(inv.amount || 0), 0);
+        alert(`Created ${invoices.length} invoices (one per property) totaling ${money(total)}.`);
+      }
     } else {
       alert(result.message || 'Nothing to bill for that month.');
     }
