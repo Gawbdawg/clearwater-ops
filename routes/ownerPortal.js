@@ -98,12 +98,13 @@ router.get('/briefing', async (req, res) => {
   let lastVisitSummary = null;
   if (lastCompleted) {
     const property = store.getById('customers', lastCompleted.customerId);
+    // Owners only ever see the tech's plain notes, never the raw chemistry readings
+    // (chlorine/pH/alkalinity) — those are operational numbers for office/tech use
+    // (see routes/people.js's admin-facing People profile, which does include them),
+    // not something a property owner needs or wants a dashboard reading out to them.
     const summary = await ai.generateVisitSummary({
       notes: lastCompleted.notes || '',
-      chlorine: lastCompleted.chlorine || '',
-      ph: lastCompleted.ph || '',
-      alkalinity: lastCompleted.alkalinity || '',
-    });
+    }, { forOwner: true });
     lastVisitSummary = {
       date: lastCompleted.date,
       propertyName: property ? property.name : '',
