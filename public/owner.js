@@ -68,9 +68,12 @@ function maybeOpenSignupFromLink() {
 
 // Routes a just-logged-in (or session-restored) owner to the Terms of Service gate if
 // they haven't clicked through it yet, or straight to the dashboard if they have.
+// Skipped entirely when an admin is using "View portal" (owner.viaAdminView) — there's
+// nothing for staff to agree to on the owner's behalf, and clicking through the gate
+// would falsely record the OWNER as having signed the rental agreement.
 async function enterPortal(owner) {
   logoutBtn.style.display = '';
-  if (!owner.agreedToTerms) {
+  if (!owner.agreedToTerms && !owner.viaAdminView) {
     showTermsGate(owner);
     return;
   }
@@ -120,6 +123,8 @@ async function showDash(owner) {
   logoutBtn.style.display = '';
   document.getElementById('welcomeMsg').textContent = `Hi ${owner.name}`;
   document.getElementById('newsletterToggle').checked = owner.newsletterSubscribed !== false;
+  document.getElementById('adminViewingBanner').classList.toggle('hidden', !owner.viaAdminView);
+  if (owner.viaAdminView) document.getElementById('adminViewingOwnerName').textContent = owner.name;
 
   currentOwner = owner;
   renderAutopayCard();
