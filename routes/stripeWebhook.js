@@ -9,6 +9,7 @@
 // verification needs the exact, untouched request body bytes.
 const store = require('../lib/store');
 const stripe = require('../lib/stripeClient');
+const { catchUpOwnerInvoices } = require('../lib/autopay');
 
 // Once an owner completes the hosted Checkout "save a card" page, this looks up the
 // SetupIntent Stripe just finished (which the webhook payload only gives us the id
@@ -64,6 +65,18 @@ async function handleAutopaySetupCompleted(session) {
     autopayEnabledAt: new Date().toISOString(),
   });
   console.log(`Autopay enabled for owner #${owner.id} (${owner.name}) — card ending ${cardLast4 || '????'}.`);
+
+  // Catch up anything already billed to this owner before they turned autopay on —
+  // without this, an invoice created/emailed earlier would just sit there forever
+  // unless an admin remembered to charge it by hand (see lib/autopay.js#catchUpOwnerInvoices).
+  try {
+    const chargedCount = await catchUpOwnerInvoices(owner.id);
+    if (chargedCount) {
+      console.log(`Checked ${chargedCount} outstanding invoice(s) for owner #${owner.id} against their new card.`);
+    }
+  } catch (err) {
+    console.error(`Error catching up outstanding invoices for owner #${owner.id}:`, err.message);
+  }
 }
 
 function handleInvoicePaymentCompleted(session) {
