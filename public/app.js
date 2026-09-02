@@ -2464,16 +2464,46 @@ window.viewMonthlyPendingJobs = async (ownerId, ownerName) => {
     return;
   }
   jobs = jobs.filter((i) => i.isMonthlyDeferred);
+  // Cached so editMonthlyPendingJob can look a job up by id without a second
+  // round trip, and so it knows which owner's modal to reopen after saving.
+  state.monthlyPendingJobs = jobs;
+  state.monthlyPendingOwner = { ownerId, ownerName };
+  // Needed for the Home dropdown inside the edit form (see customerOptions/invoiceForm).
+  if (state.customers.length === 0) state.customers = await api('/api/customers');
   const rows = jobs.map((i) => `
     <div class="profile-history-item">
       <strong>${i.issuedDate || ''} — ${i.customerName}</strong>
       <div class="meta">${i.description || 'Service'} · ${money(i.amount)}</div>
+      <div style="margin-top:6px;"><button class="btn small" onclick="editMonthlyPendingJob(${i.id})">Edit</button></div>
     </div>
   `).join('') || '<div class="empty-state">Nothing pending right now.</div>';
   openModal(`Pending jobs — ${ownerName}`, `
     ${rows}
     <div class="modal-actions"><button class="btn" onclick="closeModal()">Close</button></div>
   `);
+};
+
+// Lets the office fix a single pending job's amount/date/notes right from the
+// Monthly tab's "View jobs" drill-down, instead of having to hunt it down on the
+// classic Invoices tab first (these per-job drafts are hidden there — see
+// routes/invoices.js#enrich's isMonthlyDeferred). Reopens the pending-jobs modal
+// afterward, refreshed, and refreshes the Monthly Pending table's totals in the
+// background so the owner's pending total reflects the edit immediately.
+window.editMonthlyPendingJob = (id) => {
+  const i = (state.monthlyPendingJobs || []).find((x) => x.id === id);
+  if (!i) return;
+  openModal('Edit Invoice', invoiceForm(i));
+  document.getElementById('saveInvoiceBtn').addEventListener('click', async () => {
+    try {
+      await api('/api/invoices/' + id, { method: 'PUT', body: JSON.stringify(readInvoiceForm()) });
+      closeModal();
+      await loadMonthlyPending();
+      const owner = state.monthlyPendingOwner;
+      if (owner) await viewMonthlyPendingJobs(owner.ownerId, owner.ownerName);
+    } catch (e) {
+      alert('Could not save invoice: ' + e.message);
+    }
+  });
 };
 
 function invoiceForm(i = {}) {
