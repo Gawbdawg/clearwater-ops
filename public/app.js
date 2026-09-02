@@ -2205,10 +2205,13 @@ function renderInvoiceTable() {
   else if (filter) rows = rows.filter((i) => i.status === filter && !(filter === 'sent' && isOverdue(i)));
 
   const tbody = document.querySelector('#invoiceTable tbody');
-  tbody.innerHTML = rows.map((i) => {
-    const overdue = isOverdue(i);
-    const bundled = i.status === 'bundled';
-    return `
+  tbody.innerHTML = renderInvoiceRowsGroupedByOwner(rows) || '<tr><td colspan="6" class="empty-state">No invoices found.</td></tr>';
+}
+
+function invoiceRowHtml(i) {
+  const overdue = isOverdue(i);
+  const bundled = i.status === 'bundled';
+  return `
     <tr class="${overdue ? 'row-overdue' : ''}">
       <td>${i.customerName}</td>
       <td>${money(i.amount)}</td>
@@ -2232,7 +2235,37 @@ function renderInvoiceTable() {
       </td>
     </tr>
   `;
-  }).join('') || '<tr><td colspan="6" class="empty-state">No invoices found.</td></tr>';
+}
+
+// Sections the invoice table by owner (a property manager/vacation owner with
+// several homes) so their invoices read together instead of interleaved by date
+// across unrelated customers. Invoices with no owner (standalone residential
+// customers, billed directly under their own name) fall into one "No owner"
+// group at the end rather than each getting their own one-row section — see
+// routes/invoices.js#enrich for where ownerName comes from. Within a group,
+// the existing date-descending order from the API is preserved.
+function renderInvoiceRowsGroupedByOwner(rows) {
+  if (!rows.length) return '';
+  const groups = new Map(); // ownerName (or null) -> rows[]
+  rows.forEach((i) => {
+    const key = i.ownerName || null;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(i);
+  });
+  const ownerNames = [...groups.keys()].filter((k) => k !== null).sort((a, b) => a.localeCompare(b));
+  const orderedKeys = groups.has(null) ? [...ownerNames, null] : ownerNames;
+
+  return orderedKeys.map((key) => {
+    const groupRows = groups.get(key);
+    const total = groupRows.reduce((sum, i) => sum + Number(i.amount || 0), 0);
+    const label = key || 'No owner (individual customers)';
+    return `
+      <tr class="invoice-group-row">
+        <td colspan="6"><span class="invoice-group-name">${label}</span> <span class="invoice-group-meta">${groupRows.length} invoice${groupRows.length === 1 ? '' : 's'} · ${money(total)}</span></td>
+      </tr>
+      ${groupRows.map(invoiceRowHtml).join('')}
+    `;
+  }).join('');
 }
 
 // Groups a combined invoice's individual jobs by property + service type, so a
