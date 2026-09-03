@@ -6,6 +6,7 @@ const { invoiceDescription } = require('../lib/invoiceDescription');
 const { ownerQualifiesForMonthly } = require('../lib/monthlyInvoice');
 const { attemptAutopay, resolveOwnerForInvoice } = require('../lib/autopay');
 const { resyncAllDraftInvoices } = require('../lib/autoInvoice');
+const { sendPaymentReceipt } = require('../lib/receipt');
 const stripe = require('../lib/stripeClient');
 const router = express.Router();
 
@@ -174,6 +175,7 @@ router.post('/relabel-default-services', (req, res) => {
 });
 
 router.put('/:id', (req, res) => {
+  const before = store.getById('invoices', req.params.id);
   const updates = { ...req.body };
   if (updates.amount !== undefined) updates.amount = Number(updates.amount);
   // Without this, saving the edit form (whose <select> always yields a string) leaves
@@ -185,8 +187,17 @@ router.put('/:id', (req, res) => {
   if (updates.customerId !== undefined && updates.customerId !== null && updates.customerId !== '') {
     updates.customerId = Number(updates.customerId);
   }
+  if (updates.status === 'paid' && !updates.paidAt && (!before || before.status !== 'paid')) {
+    updates.paidAt = new Date().toISOString();
+  }
   const updated = store.update('invoices', req.params.id, updates);
   if (!updated) return res.status(404).json({ error: 'Invoice not found' });
+  // An admin marking an invoice paid by hand (a check, cash, a payment taken over the
+  // phone) gets the exact same receipt email an online/autopay payment triggers — see
+  // lib/receipt.js. Fire-and-forget so a mail hiccup never blocks saving the invoice.
+  if (before && before.status !== 'paid' && updated.status === 'paid') {
+    sendPaymentReceipt(updated).catch(() => {});
+  }
   res.json(enrich(updated));
 });
 
