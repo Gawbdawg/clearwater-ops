@@ -54,6 +54,14 @@ function enrich(inv) {
     const properties = store.getAll('customers');
     isMonthlyDeferred = ownerQualifiesForMonthly(owner, properties);
   }
+  // The invoice's own issuedDate is a separate field from the linked appointment's
+  // actual date — editing an invoice's date in the admin UI used to only ever touch
+  // this billing record, leaving the real scheduled/completed job (what the tech was
+  // dispatched for, what shows on the Daily Schedule) silently stuck on the old day.
+  // Exposing the appointment's true date here lets the invoice edit form show and
+  // correct it directly (see PUT /:id below, which pushes an issuedDate edit back
+  // onto the appointment whenever one is linked).
+  const linkedAppointment = inv.appointmentId ? store.getById('appointments', inv.appointmentId) : null;
   return {
     ...inv,
     customerName: customer ? customer.name : 'Unknown customer',
@@ -61,6 +69,7 @@ function enrich(inv) {
     isCombined: hasLineItems,
     isMonthlyDeferred,
     autopayReady: invoiceAutopayReady(inv),
+    appointmentDate: linkedAppointment ? linkedAppointment.date : null,
   };
 }
 
@@ -192,6 +201,20 @@ router.put('/:id', (req, res) => {
   }
   const updated = store.update('invoices', req.params.id, updates);
   if (!updated) return res.status(404).json({ error: 'Invoice not found' });
+  // An invoice's issuedDate isn't just a billing-record date when it's linked to a
+  // real appointment (appointmentId) — in the admin UI (Edit Invoice, and the Monthly
+  // tab's "View jobs" pending-jobs list), it's shown and edited as though it IS the
+  // service's date. Before this, correcting a wrong date here only ever touched the
+  // invoice; the actual scheduled/completed appointment — what shows on the Daily
+  // Schedule and what the tech was dispatched for — silently stayed on the old day.
+  // Push the correction through to the linked appointment too, so fixing the date one
+  // place actually moves the job.
+  if (updates.issuedDate !== undefined && updated.appointmentId) {
+    const linkedAppt = store.getById('appointments', updated.appointmentId);
+    if (linkedAppt && linkedAppt.date !== updates.issuedDate) {
+      store.update('appointments', linkedAppt.id, { date: updates.issuedDate });
+    }
+  }
   // An admin marking an invoice paid by hand (a check, cash, a payment taken over the
   // phone) gets the exact same receipt email an online/autopay payment triggers — see
   // lib/receipt.js. Fire-and-forget so a mail hiccup never blocks saving the invoice.
