@@ -3779,6 +3779,27 @@ document.getElementById('backfillCheckoutDatesBtn').addEventListener('click', as
   }
 });
 
+document.getElementById('backfillMaxwellScheduleBtn').addEventListener('click', async () => {
+  const btn = document.getElementById('backfillMaxwellScheduleBtn');
+  btn.disabled = true;
+  try {
+    const result = await api('/api/appointments/backfill-maxwell-schedule', { method: 'POST' });
+    const parts = [];
+    parts.push(result.created > 0 ? `Scheduled ${result.created} missing checkout visit(s).` : 'No missing checkout visits found.');
+    if (result.reason) {
+      parts.push(result.reason);
+    } else {
+      parts.push(result.reassigned > 0 ? `Assigned Maxwell to ${result.reassigned} unassigned visit(s).` : 'Nothing was unassigned.');
+    }
+    alert(parts.join(' '));
+    loadAppointments();
+  } catch (e) {
+    alert('Could not run this: ' + e.message);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
 document.getElementById('saveNotificationEmailBtn').addEventListener('click', async () => {
   const statusEl = document.getElementById('notificationEmailStatus');
   const btn = document.getElementById('saveNotificationEmailBtn');

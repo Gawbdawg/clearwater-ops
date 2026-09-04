@@ -5,6 +5,7 @@ const { syncInvoiceForCompletedAppointment, createOrSyncInvoiceWithTier } = requ
 const { notifyOwnerJobCompleted } = require('../lib/jobCompletionEmail');
 const { makeCustomerMatcher } = require('../lib/customerMatch');
 const { futureDates } = require('../lib/recurrence');
+const { scheduleAllUpcomingCheckouts, assignDefaultTechnicianToUnassigned } = require('../lib/turnoverSchedule');
 const router = express.Router();
 
 function enrich(appt) {
@@ -270,6 +271,17 @@ router.post('/backfill-checkout-dates', (req, res) => {
     }
   });
   res.json({ updated });
+});
+
+// Sweeps every current booking for a missing checkout appointment (covers any iCal
+// stay that never got one — e.g. from a sync that ran before the property's block was
+// removed today, or any other gap) and reassigns every unassigned auto-scheduled
+// checkout to Maxwell, the default technician for these. Safe to run any time — both
+// steps are no-ops for anything already scheduled/assigned.
+router.post('/backfill-maxwell-schedule', (req, res) => {
+  const scheduled = scheduleAllUpcomingCheckouts();
+  const assigned = assignDefaultTechnicianToUnassigned();
+  res.json({ ...scheduled, ...assigned });
 });
 
 router.post('/dedupe', (req, res) => {
