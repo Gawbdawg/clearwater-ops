@@ -89,6 +89,20 @@ router.put('/:id', (req, res) => {
   if (updates.customerId) updates.customerId = Number(updates.customerId);
   if (updates.technicianId) updates.technicianId = Number(updates.technicianId);
   if (updates.serviceId !== undefined) updates.serviceId = updates.serviceId ? Number(updates.serviceId) : null;
+  // Appointments auto-scheduled BEFORE the checkoutDate field existed (see
+  // lib/turnoverSchedule.js#maybeCreateCheckoutAppointment) never got tagged with it —
+  // so moving one of those to a new date used to look, to the next iCal resync, exactly
+  // like that checkout was never handled, and a duplicate got created right back on the
+  // original day. Lazily backfilling checkoutDate here, at the moment of the FIRST
+  // move, closes that gap for all pre-existing data without needing a one-time
+  // migration: freeze in the date this appointment is being moved away FROM as its
+  // checkoutDate, so a resync still recognizes that day as already covered. Harmless
+  // to set on an appointment that was never tied to a booking checkout at all — it
+  // just means a real checkout that happens to land on the same day won't get a
+  // redundant second cleaning either.
+  if (before && updates.date !== undefined && updates.date !== before.date && !before.checkoutDate) {
+    updates.checkoutDate = before.date;
+  }
   const updated = store.update('appointments', req.params.id, updates);
   if (!updated) return res.status(404).json({ error: 'Appointment not found' });
   syncInvoiceForCompletedAppointment(updated);
@@ -237,6 +251,27 @@ router.post('/bulk-import-text', (req, res) => {
 // One-time cleanup: removes duplicate appointments (same customer + same date),
 // keeping the earliest-created one. Safe to run any time — it's a no-op once there
 // are no duplicates left. Meant to undo accidental double-imports/double-clicks.
+// One-time backfill for appointments auto-scheduled BEFORE the checkoutDate field
+// existed (see lib/turnoverSchedule.js#maybeCreateCheckoutAppointment) — tags each one
+// still missing it with checkoutDate = its current date, so moving one of these
+// pre-existing visits is safe from here on (the next iCal resync will recognize that
+// checkout as already handled instead of recreating a duplicate on the original day —
+// this is exactly the bug the checkoutDate field exists to prevent, see PUT /:id's
+// on-move backfill for the lazy per-appointment version of this same fix). Only
+// touches appointments carrying the fixed auto-scheduled note and only those that
+// don't already have a checkoutDate — safe to run more than once, a no-op the second
+// time.
+router.post('/backfill-checkout-dates', (req, res) => {
+  let updated = 0;
+  store.getAll('appointments').forEach((a) => {
+    if (a.notes === 'Auto-scheduled: guest checkout day.' && !a.checkoutDate) {
+      store.update('appointments', a.id, { checkoutDate: a.date });
+      updated += 1;
+    }
+  });
+  res.json({ updated });
+});
+
 router.post('/dedupe', (req, res) => {
   const appts = store.getAll('appointments').slice().sort((a, b) => a.id - b.id);
   const seen = new Set();
