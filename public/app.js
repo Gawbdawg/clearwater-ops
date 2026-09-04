@@ -3784,14 +3784,7 @@ document.getElementById('backfillMaxwellScheduleBtn').addEventListener('click', 
   btn.disabled = true;
   try {
     const result = await api('/api/appointments/backfill-maxwell-schedule', { method: 'POST' });
-    const parts = [];
-    parts.push(result.created > 0 ? `Scheduled ${result.created} missing checkout visit(s).` : 'No missing checkout visits found.');
-    if (result.reason) {
-      parts.push(result.reason);
-    } else {
-      parts.push(result.reassigned > 0 ? `Assigned Maxwell to ${result.reassigned} unassigned visit(s).` : 'Nothing was unassigned.');
-    }
-    alert(parts.join(' '));
+    alert(result.created > 0 ? `Scheduled ${result.created} missing checkout visit(s). They're unassigned — assign a technician from the schedule.` : 'No missing checkout visits found.');
     loadAppointments();
   } catch (e) {
     alert('Could not run this: ' + e.message);
