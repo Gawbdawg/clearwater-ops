@@ -360,6 +360,9 @@ Clear Water Spa Service`;
   try {
     const pdfDoc = buildInvoicePdf({
       invoice, recipient, property: propertyReference(invoice), payLink, businessName: 'Clear Water Spa Service',
+      businessAddress: '1027 SW 62nd St, Lincoln City, OR 97367',
+      businessPhone: '(541) 961-4703',
+      businessEmail: 'clearwaterspaservice@gmail.com',
     });
     const pdfBuffer = await pdfDocToBuffer(pdfDoc);
     attachments = [{ filename: `invoice-${invoice.id}.pdf`, content: pdfBuffer, contentType: 'application/pdf' }];
@@ -418,6 +421,9 @@ router.post('/:id/send-nudge', async (req, res) => {
   try {
     const pdfDoc = buildInvoicePdf({
       invoice, recipient, property: propertyReference(invoice), payLink, businessName: 'Clear Water Spa Service',
+      businessAddress: '1027 SW 62nd St, Lincoln City, OR 97367',
+      businessPhone: '(541) 961-4703',
+      businessEmail: 'clearwaterspaservice@gmail.com',
     });
     const pdfBuffer = await pdfDocToBuffer(pdfDoc);
     attachments = [{ filename: `invoice-${invoice.id}.pdf`, content: pdfBuffer, contentType: 'application/pdf' }];
