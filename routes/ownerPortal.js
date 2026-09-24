@@ -854,7 +854,7 @@ router.put('/properties/:id/ical-url', (req, res) => {
 // lib/icalSync.js can tell "two different platforms" from "the same platform twice").
 router.put('/properties/:id/ical-urls', (req, res) => {
   if (!myProperty(req, req.params.id)) return res.status(404).json({ error: 'Property not found' });
-  const { icalUrls } = req.body;
+  const { icalUrls, icalMutualBlocking } = req.body;
   if (!Array.isArray(icalUrls)) return res.status(400).json({ error: 'icalUrls must be an array' });
   let nextId = Date.now();
   const cleaned = icalUrls
@@ -864,8 +864,17 @@ router.put('/properties/:id/ical-urls', (req, res) => {
       label: row && row.label && String(row.label).trim() ? String(row.label).trim() : guessLabel(row && row.url),
     }))
     .filter((row) => row.url);
-  const updated = store.update('customers', req.params.id, { icalUrls: cleaned });
-  res.json({ icalUrls: updated.icalUrls });
+  // "Mutual blocking" is for a property with more than one rentable unit sharing a
+  // single amenity we service (e.g. a main house + carriage house sharing one hot
+  // tub) — each unit is listed on its own calendar, so their date ranges are EXPECTED
+  // to legitimately overlap (two different guests, two different units, same tub).
+  // That's structurally identical to what lib/icalSync.js's overlap check normally
+  // flags as a likely double-booking, so a property owner sets this flag to tell sync
+  // "don't treat overlaps here as a warning" — see lib/icalSync.js#syncCustomerCalendar.
+  const updates = { icalUrls: cleaned };
+  if (typeof icalMutualBlocking === 'boolean') updates.icalMutualBlocking = icalMutualBlocking;
+  const updated = store.update('customers', req.params.id, updates);
+  res.json({ icalUrls: updated.icalUrls, icalMutualBlocking: !!updated.icalMutualBlocking });
 });
 
 router.post('/properties/:id/sync-calendar', async (req, res) => {

@@ -379,6 +379,10 @@
               <p class="portal-sub" style="margin:0 0 10px;">Add a link for each platform this property is listed on. Since Airbnb and VRBO don't share calendars with each other, we pull bookings from every link you add here and flag any dates that overlap between two different platforms, so a double-booking shows up before it becomes a problem.</p>
               <div id="icalUrlRows"></div>
               <button class="btn small" type="button" id="addIcalRowBtn" style="margin-top:4px;">+ Add another calendar</button>
+              <label style="display:flex; gap:8px; align-items:flex-start; margin-top:12px; font-weight:400;">
+                <input type="checkbox" id="icalMutualBlockingCheckbox" style="margin-top:3px;" />
+                <span>These are separate units sharing one hot tub we service (e.g. a main house + carriage house) — their calendars are expected to overlap, so don't warn me about a double-booking.</span>
+              </label>
               <div id="icalSyncStatus" class="portal-sub" style="margin:10px 0 0;"></div>
               <div style="display:flex; gap:8px; margin-top:8px;">
                 <button class="btn primary" id="saveIcalBtn">Save & sync now</button>

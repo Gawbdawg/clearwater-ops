@@ -619,6 +619,7 @@ function renderIcalRows(p) {
   } else {
     rows.forEach((r) => addIcalRow(r.label || '', r.url || ''));
   }
+  document.getElementById('icalMutualBlockingCheckbox').checked = !!p.icalMutualBlocking;
 }
 
 function addIcalRow(label, url) {
@@ -1112,6 +1113,7 @@ document.getElementById('saveIcalBtn').addEventListener('click', async () => {
       url: row.querySelector('.ical-url-input').value.trim(),
     }))
     .filter((r) => r.url);
+  const icalMutualBlocking = document.getElementById('icalMutualBlockingCheckbox').checked;
 
   const statusEl = document.getElementById('icalSyncStatus');
   const btn = document.getElementById('saveIcalBtn');
@@ -1120,10 +1122,11 @@ document.getElementById('saveIcalBtn').addEventListener('click', async () => {
   try {
     const saved = await api(`/api/owner/properties/${selectedPropertyId}/ical-urls`, {
       method: 'PUT',
-      body: JSON.stringify({ icalUrls: rows }),
+      body: JSON.stringify({ icalUrls: rows, icalMutualBlocking }),
     });
     const p = selectedProperty();
     p.icalUrls = saved.icalUrls;
+    p.icalMutualBlocking = saved.icalMutualBlocking;
     if (rows.length) {
       const result = await api(`/api/owner/properties/${selectedPropertyId}/sync-calendar`, { method: 'POST' });
       const bySourceText = result.sources.map((s) => `${s.label}: ${s.count}`).join(', ');
