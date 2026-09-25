@@ -46,7 +46,21 @@ router.put('/:id', (req, res) => {
   const updates = {};
   if (req.body.clockInAt !== undefined) updates.clockInAt = req.body.clockInAt;
   if (req.body.clockOutAt !== undefined) updates.clockOutAt = req.body.clockOutAt;
-  if (req.body.gasStipendAdded !== undefined) updates.gasStipendAdded = !!req.body.gasStipendAdded;
+  if (req.body.gasStipendAdded !== undefined) {
+    updates.gasStipendAdded = !!req.body.gasStipendAdded;
+    // Turning the checkbox ON right now snapshots the tech's CURRENT gas stipend
+    // amount onto this entry, same as a real clock-in does (see
+    // routes/techPortal.js#clock-in and lib/timesheet.js#summarizeByDay) — so a rate
+    // change later never rewrites pay already recorded for a past day. Turning it off
+    // clears the snapshot so it doesn't linger if it's flipped back on to a different
+    // date's rate later.
+    if (updates.gasStipendAdded) {
+      const tech = store.getById('technicians', entry.technicianId);
+      updates.gasStipendAmount = typeof tech?.gasStipendAmount === 'number' ? tech.gasStipendAmount : 10;
+    } else {
+      updates.gasStipendAmount = null;
+    }
+  }
   const updated = store.update('timeEntries', req.params.id, updates);
   res.json(updated);
 });
@@ -64,12 +78,18 @@ router.post('/', (req, res) => {
   if (!technicianId || !date || !clockInAt) {
     return res.status(400).json({ error: 'technicianId, date, and clockInAt are required' });
   }
+  let gasStipendAmount = null;
+  if (gasStipendAdded) {
+    const tech = store.getById('technicians', Number(technicianId));
+    gasStipendAmount = typeof tech?.gasStipendAmount === 'number' ? tech.gasStipendAmount : 10;
+  }
   const entry = store.create('timeEntries', {
     technicianId: Number(technicianId),
     date,
     clockInAt,
     clockOutAt: clockOutAt || null,
     gasStipendAdded: !!gasStipendAdded,
+    gasStipendAmount,
   });
   res.status(201).json(entry);
 });

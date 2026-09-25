@@ -357,12 +357,20 @@ router.post('/clock-in', (req, res) => {
   const date = now.toISOString().slice(0, 10);
   const isFirstOfDay = !store.getAll('timeEntries').some((e) => e.technicianId === technicianId && e.date === date);
 
+  // Snapshot the tech's CURRENT gas stipend amount onto the entry right now, at the
+  // moment it's earned — see lib/timesheet.js#summarizeByDay for why this can't be
+  // looked up live from the technician record when computing pay later (a rate change
+  // must never retroactively change already-earned days).
+  const tech = store.getById('technicians', technicianId);
+  const gasStipendAmount = typeof tech?.gasStipendAmount === 'number' ? tech.gasStipendAmount : 10;
+
   const entry = store.create('timeEntries', {
     technicianId,
     date,
     clockInAt: now.toISOString(),
     clockOutAt: null,
     gasStipendAdded: isFirstOfDay,
+    gasStipendAmount: isFirstOfDay ? gasStipendAmount : null,
   });
   res.status(201).json(entry);
 });
