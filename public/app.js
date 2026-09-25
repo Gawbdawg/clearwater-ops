@@ -1309,6 +1309,7 @@ function techForm(t = {}) {
     <label>Phone<input id="f_tphone" value="${t.phone || ''}" /></label>
     <label>Email<input id="f_temail" value="${t.email || ''}" /></label>
     <label>Hourly rate <span style="font-weight:400; color:var(--text-faint);">(used to compute pay from clocked hours)</span><input type="number" step="0.01" min="0" id="f_thourlyrate" value="${t.hourlyRate || ''}" placeholder="e.g. 22.00" /></label>
+    <label>Gas stipend <span style="font-weight:400; color:var(--text-faint);">(flat amount added on a day this tech clocks in with gas stipend checked — default $10)</span><input type="number" step="0.01" min="0" id="f_tgasstipend" value="${t.gasStipendAmount !== undefined && t.gasStipendAmount !== null ? t.gasStipendAmount : 10}" placeholder="10.00" /></label>
     <div style="display:flex; flex-direction: column; gap: 12px; border-top: 1px solid #eef1f2; padding-top: 12px;">
       <div style="font-size:13px; font-weight:600; color:#33505c;">Technician portal login</div>
       <label>Username<input id="f_tusername" value="${t.username || ''}" autocomplete="off" /></label>
@@ -1339,6 +1340,7 @@ function readTechForm() {
     phone: document.getElementById('f_tphone').value,
     email: document.getElementById('f_temail').value,
     hourlyRate: document.getElementById('f_thourlyrate').value,
+    gasStipendAmount: document.getElementById('f_tgasstipend').value,
     username: document.getElementById('f_tusername').value,
     password: document.getElementById('f_tpassword').value,
   };

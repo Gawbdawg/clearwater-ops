@@ -62,7 +62,7 @@ router.get('/pulse', async (req, res) => {
 });
 
 router.post('/', (req, res) => {
-  const { name, email, phone, username, password, hourlyRate } = req.body;
+  const { name, email, phone, username, password, hourlyRate, gasStipendAmount } = req.body;
   if (!name) return res.status(400).json({ error: 'Name is required' });
 
   if (username) {
@@ -79,17 +79,23 @@ router.post('/', (req, res) => {
     username: username || '',
     passwordHash: password ? hashPassword(password) : '',
     hourlyRate: hourlyRate !== undefined && hourlyRate !== '' ? Number(hourlyRate) : 0,
+    // Flat per-day amount added when this tech clocks in and the gas stipend applies
+    // (see lib/timesheet.js#summarizeByDay). Defaults to the standard $10 — a
+    // technician only needs their own row here to override that, e.g. a longer
+    // regular route that costs more in gas.
+    gasStipendAmount: gasStipendAmount !== undefined && gasStipendAmount !== '' ? Number(gasStipendAmount) : 10,
   });
   res.status(201).json(sanitizeTechnician(tech));
 });
 
 router.put('/:id', (req, res) => {
-  const { name, email, phone, username, password, hourlyRate } = req.body;
+  const { name, email, phone, username, password, hourlyRate, gasStipendAmount } = req.body;
   const updates = {};
   if (name !== undefined) updates.name = name;
   if (email !== undefined) updates.email = email;
   if (phone !== undefined) updates.phone = phone;
   if (hourlyRate !== undefined) updates.hourlyRate = hourlyRate === '' ? 0 : Number(hourlyRate);
+  if (gasStipendAmount !== undefined) updates.gasStipendAmount = gasStipendAmount === '' ? 10 : Number(gasStipendAmount);
 
   if (username !== undefined) {
     if (username) {
